@@ -24,7 +24,7 @@ test("ships a single-screen watchlist radar and stock focus cockpit", async () =
   assert.match(component, /高密度自选扫描器/);
   assert.equal((component.match(/<VisualDataPanel /g) ?? []).length, 7);
   for (const domain of ["VALUATION SPECTRUM", "ECONOMIC QUALITY", "GROWTH VECTOR", "BALANCE & PAYOUT", "RETURN SURFACE", "TREND POSITION", "EXPECTATION MAP"]) {
-    assert.match(component, new RegExp(`eyebrow="${domain.replace(/[&]/g, "\\&")}"`));
+    assert.ok(component.includes(`eyebrow="${domain}"`));
   }
   assert.match(component, /aggregateCandles\(sourcePoints, usingMinute \? 5 : 1\)/);
   assert.match(component, /data-chart-type="candlestick"/);
@@ -56,7 +56,7 @@ test("ships a single-screen watchlist radar and stock focus cockpit", async () =
 });
 
 test("refreshes live quotes, intraday bars, and signals through guarded server APIs", async () => {
-  const [component, liveRoute, intradayRoute, signalsRoute, gateway, dashboardRoute, stocksRoute, protection, database] = await Promise.all([
+  const [component, liveRoute, intradayRoute, signalsRoute, gateway, dashboardRoute, stocksRoute, protection, database, logging] = await Promise.all([
     readFile(new URL("app/drillr-dashboard.tsx", root), "utf8"),
     readFile(new URL("app/api/live/route.ts", root), "utf8"),
     readFile(new URL("app/api/intraday/route.ts", root), "utf8"),
@@ -66,6 +66,7 @@ test("refreshes live quotes, intraday bars, and signals through guarded server A
     readFile(new URL("app/api/stocks/route.ts", root), "utf8"),
     readFile(new URL("app/api/protection.ts", root), "utf8"),
     readFile(new URL("db/index.ts", root), "utf8"),
+    readFile(new URL("lib/logging.ts", root), "utf8"),
   ]);
 
   assert.match(component, /fetch\("\/api\/live"/);
@@ -101,6 +102,8 @@ test("refreshes live quotes, intraday bars, and signals through guarded server A
   assert.match(protection, /PUBLIC_API_RATE_LIMIT_PER_MINUTE/);
   assert.match(protection, /incrementApiRateLimits/);
   assert.match(protection, /withSharedApiCache/);
+  assert.match(logging, /replace\(\/\[\\n\\r\\u2028\\u2029\]\/g/);
+  assert.match(logging, /LOG_VALUE_LIMIT/);
   assert.match(protection, /coalesceRequest/);
   assert.match(database, /@upstash\/redis/);
   assert.match(database, /UPSTASH_REDIS_REST_URL/);

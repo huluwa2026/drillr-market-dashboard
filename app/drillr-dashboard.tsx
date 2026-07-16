@@ -358,7 +358,7 @@ function FocusSummary({ stock, quote, signalCount, quoteMove, liveAt }: { stock:
       <div className="hero-price">
         <span>{localized(locale, "最新价", "LATEST PRICE")}</span>
         <strong>{money(price)}</strong>
-        <div className={valueTone(dayMove)}><b>{percent(dayMove)}</b><em>{quote ? (quote.change >= 0 ? "+" : "") + money(quote.change).replace("$", "$") : localized(locale, "日内", "INTRADAY")}</em></div>
+        <div className={valueTone(dayMove)}><b>{percent(dayMove)}</b><em>{quote ? (quote.change >= 0 ? "+" : "") + money(quote.change) : localized(locale, "日内", "INTRADAY")}</em></div>
       </div>
       <div className="session-quotes">
         <div><span>{localized(locale, "盘前", "PRE-MKT")}</span><b>{money(quote?.preMarketPrice ?? stock.extended?.pre_price)}</b><em className={valueTone(quote?.preMarketChangePercent ?? stock.extended?.pre_change_rate)}>{percent(quote?.preMarketChangePercent ?? stock.extended?.pre_change_rate)}</em></div>

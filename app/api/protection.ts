@@ -5,6 +5,7 @@ import {
   putApiResponseCache,
   releaseRefreshLock,
 } from "../../db";
+import { sanitizeLogValue } from "../../lib/logging";
 
 type CachedResult<T> = {
   value: T;
@@ -133,7 +134,11 @@ export async function withSharedApiCache<T>(
       return { value: refreshed, state: "refreshed" };
     } catch (error) {
       if (latest && checkedAt - latest.expiresAt <= staleTtlMs) {
-        console.warn(`[drillr-api] serving stale cache for ${key}`, error);
+        console.warn(
+          "[drillr-api] serving stale cache for %s: %s",
+          sanitizeLogValue(key),
+          sanitizeLogValue(error),
+        );
         return { value: JSON.parse(latest.payload) as T, state: "stale" };
       }
       throw error;
@@ -159,7 +164,11 @@ export function protectedJson<T extends object>(
 }
 
 export function serviceUnavailable(scope: string, publicMessage: string, error: unknown) {
-  console.error(`[drillr-api] ${scope} unavailable`, error);
+  console.error(
+    "[drillr-api] %s unavailable: %s",
+    sanitizeLogValue(scope),
+    sanitizeLogValue(error),
+  );
   return Response.json(
     { ok: false, error: publicMessage },
     {
