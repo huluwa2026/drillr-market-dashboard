@@ -1,5 +1,4 @@
 import { Redis } from "@upstash/redis";
-import { sanitizeLogValue } from "../lib/logging";
 
 const DEFAULT_STOCKS = [
   { ticker: "NVDA", name: "英伟达", market: "NASDAQ", sortOrder: 10 },
@@ -179,10 +178,15 @@ export async function releaseRefreshLock(cacheKey: string, token: string) {
   } catch (error) {
     // The token-checked lock expires automatically; a failed cleanup must not
     // discard an otherwise successful market-data refresh.
+    const safeCacheKey = cacheKey.replace(/\n|\r/g, "").replace(/\u2028|\u2029/g, "").slice(0, 1_000);
+    const safeError = (error instanceof Error ? error.message : String(error))
+      .replace(/\n|\r/g, "")
+      .replace(/\u2028|\u2029/g, "")
+      .slice(0, 1_000);
     console.warn(
       "[drillr-cache] refresh lock cleanup failed for %s: %s",
-      sanitizeLogValue(cacheKey),
-      sanitizeLogValue(error),
+      safeCacheKey,
+      safeError,
     );
   }
 }

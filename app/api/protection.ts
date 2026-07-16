@@ -5,7 +5,6 @@ import {
   putApiResponseCache,
   releaseRefreshLock,
 } from "../../db";
-import { sanitizeLogValue } from "../../lib/logging";
 
 type CachedResult<T> = {
   value: T;
@@ -134,10 +133,15 @@ export async function withSharedApiCache<T>(
       return { value: refreshed, state: "refreshed" };
     } catch (error) {
       if (latest && checkedAt - latest.expiresAt <= staleTtlMs) {
+        const safeKey = key.replace(/\n|\r/g, "").replace(/\u2028|\u2029/g, "").slice(0, 1_000);
+        const safeError = (error instanceof Error ? error.message : String(error))
+          .replace(/\n|\r/g, "")
+          .replace(/\u2028|\u2029/g, "")
+          .slice(0, 1_000);
         console.warn(
           "[drillr-api] serving stale cache for %s: %s",
-          sanitizeLogValue(key),
-          sanitizeLogValue(error),
+          safeKey,
+          safeError,
         );
         return { value: JSON.parse(latest.payload) as T, state: "stale" };
       }
@@ -164,10 +168,15 @@ export function protectedJson<T extends object>(
 }
 
 export function serviceUnavailable(scope: string, publicMessage: string, error: unknown) {
+  const safeScope = scope.replace(/\n|\r/g, "").replace(/\u2028|\u2029/g, "").slice(0, 1_000);
+  const safeError = (error instanceof Error ? error.message : String(error))
+    .replace(/\n|\r/g, "")
+    .replace(/\u2028|\u2029/g, "")
+    .slice(0, 1_000);
   console.error(
     "[drillr-api] %s unavailable: %s",
-    sanitizeLogValue(scope),
-    sanitizeLogValue(error),
+    safeScope,
+    safeError,
   );
   return Response.json(
     { ok: false, error: publicMessage },
