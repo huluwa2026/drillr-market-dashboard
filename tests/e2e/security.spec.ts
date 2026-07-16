@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { enforcePublicRateLimit } from "../../app/api/protection";
 import { isSameOriginMutation, verifyIdentitySignature } from "../../app/auth-policy";
+import { reserveGatewayDailyRequest } from "../../db";
 
 async function sign(secret: string, message: string) {
   const encoder = new TextEncoder();
@@ -33,6 +35,54 @@ test("accepts only fresh identities signed by the trusted proxy", async () => {
 test("rejects cross-site stock mutations", () => {
   expect(isSameOriginMutation(new Request("https://dashboard.example/api/stocks", { headers: { origin: "https://dashboard.example", "sec-fetch-site": "same-origin" } }))).toBe(true);
   expect(isSameOriginMutation(new Request("https://dashboard.example/api/stocks", { headers: { origin: "https://evil.example", "sec-fetch-site": "cross-site" } }))).toBe(false);
+});
+
+test("enforces route-specific and global public API limits", async () => {
+  const routeSubject = `198.51.100.${Date.now()}-${Math.random()}`;
+  const routeRequest = new Request("https://dashboard.example/api/intraday", {
+    headers: { "x-vercel-forwarded-for": routeSubject },
+  });
+  for (let count = 0; count < 10; count += 1) {
+    await expect(enforcePublicRateLimit(routeRequest, "intraday", 10)).resolves.toBeNull();
+  }
+  const routeLimited = await enforcePublicRateLimit(routeRequest, "intraday", 10);
+  expect(routeLimited?.status).toBe(429);
+  expect(routeLimited?.headers.get("X-RateLimit-Scope")).toBe("intraday");
+
+  const globalSubject = `203.0.113.${Date.now()}-${Math.random()}`;
+  const globalRequest = new Request("https://dashboard.example/api/probe", {
+    headers: { "x-vercel-forwarded-for": globalSubject },
+  });
+  for (let count = 0; count < 20; count += 1) {
+    await expect(enforcePublicRateLimit(globalRequest, `probe-${count}`, 100)).resolves.toBeNull();
+  }
+  const globallyLimited = await enforcePublicRateLimit(globalRequest, "probe-final", 100);
+  expect(globallyLimited?.status).toBe(429);
+  expect(globallyLimited?.headers.get("X-RateLimit-Scope")).toBe("global");
+});
+
+test("reserves global and scoped gateway budgets atomically", async () => {
+  const dayKey = `test-${Date.now()}-${Math.random()}`;
+  await expect(reserveGatewayDailyRequest(dayKey, "live", 2, 1)).resolves.toMatchObject({
+    allowed: true,
+    totalUsed: 1,
+    scopeUsed: 1,
+  });
+  await expect(reserveGatewayDailyRequest(dayKey, "live", 2, 1)).resolves.toMatchObject({
+    allowed: false,
+    totalUsed: 1,
+    scopeUsed: 1,
+  });
+  await expect(reserveGatewayDailyRequest(dayKey, "signals", 2, 1)).resolves.toMatchObject({
+    allowed: true,
+    totalUsed: 2,
+    scopeUsed: 1,
+  });
+  await expect(reserveGatewayDailyRequest(dayKey, "intraday", 2, 1)).resolves.toMatchObject({
+    allowed: false,
+    totalUsed: 2,
+    scopeUsed: 0,
+  });
 });
 
 test("local development storage persists watchlist mutations for the running server", async ({ request }, testInfo) => {

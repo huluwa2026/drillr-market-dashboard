@@ -60,8 +60,10 @@ npm run dev
 | `KV_REST_API_URL` | 兼容变量 | 部分 Vercel Marketplace 集成使用的 Upstash REST 地址变量名。 |
 | `KV_REST_API_TOKEN` | 兼容变量 | 部分 Vercel Marketplace 集成使用的 Upstash REST Token 变量名。 |
 | `REDIS_KEY_PREFIX` | 否 | Redis 命名空间，默认 `drillr-market-dashboard:v1`。 |
-| `PUBLIC_API_RATE_LIMIT_PER_MINUTE` | 否 | 每个来源每分钟的公开 API 请求上限。 |
-| `DRILLR_DAILY_REQUEST_LIMIT` | 否 | 每个 UTC 日最多调用 Drillr Gateway 的次数，默认 `10000`。 |
+| `PUBLIC_API_RATE_LIMIT_PER_MINUTE` | 否 | 所有读取接口合计的每来源分钟上限，默认 `20`。 |
+| `PUBLIC_API_*_RATE_LIMIT_PER_MINUTE` | 否 | `DASHBOARD`、`LIVE`、`SIGNALS`、`INTRADAY`、`STOCKS` 的独立上限，默认分别为 `3`、`6`、`4`、`10`、`6`。 |
+| `DRILLR_DAILY_REQUEST_LIMIT` | 否 | 每个 UTC 日调用 Drillr Gateway 的总上限，默认 `5000`。 |
+| `DRILLR_DAILY_*_LIMIT` | 否 | `DASHBOARD`、`LIVE`、`SIGNALS`、`INTRADAY` 的独立回源日预算。 |
 | `DRILLR_CIRCUIT_FAILURE_THRESHOLD` | 否 | 连续失败多少次后熔断，默认 `5`。 |
 | `DRILLR_CIRCUIT_COOLDOWN_SECONDS` | 否 | 熔断冷却时间，默认 `60` 秒。 |
 | `RATE_LIMIT_SALT` | 生产环境 | 用于单向散列访问来源的随机密钥。 |
@@ -86,12 +88,13 @@ npm run build    # 创建生产构建
 
 ## 公开部署安全
 
-- 实时报价、分钟行情和信号会分别使用短周期 Redis 共享缓存，避免每个浏览器重复消耗额度。
-- 公开 API 会先执行匿名来源限流，再访问 Drillr。
-- 每次真实上游请求都会计入每日额度；连续失败默认达到 5 次后熔断 60 秒。
+- 实时报价、分钟行情和信号使用 60 秒 Redis 共享缓存，避免每个浏览器重复消耗额度。
+- 公开 API 同时执行所有接口共享的来源限流和独立接口限流，再访问 Drillr。
+- Redis 分布式刷新锁保证缓存过期时只有一个 Vercel 实例回源。
+- 每次真实上游请求都必须同时占用全局日预算和对应接口的日预算；连续失败默认达到 5 次后熔断 60 秒。
 - 上游异常时可以短暂返回过期缓存，具体错误只进入服务端日志，不返回浏览器。
 - 生产写操作默认关闭；必须同时配置可信身份模式和非空 `ADMIN_EMAILS`。
-- HMAC 代理接入方式和部署检查清单见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
+- 正式公开前还必须配置 Vercel Firewall；HMAC 代理接入方式和完整部署检查清单见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
 
 ## 数据、品牌与测试夹具
 

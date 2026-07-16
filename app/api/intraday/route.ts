@@ -21,7 +21,7 @@ function isoDate(date: Date) {
 }
 
 export async function GET(request: Request) {
-  const limited = await enforcePublicRateLimit(request, "intraday", 90);
+  const limited = await enforcePublicRateLimit(request, "intraday", 10);
   if (limited) return limited;
 
   const ticker = new URL(request.url).searchParams.get("ticker")?.trim().toUpperCase() ?? "";
@@ -33,12 +33,14 @@ export async function GET(request: Request) {
   try {
     const cached = await withSharedApiCache(
       `intraday-v1:${ticker}`,
-      30_000,
+      60_000,
       async () => {
         const to = new Date();
         const from = new Date(to.getTime() - 5 * 24 * 60 * 60 * 1000);
         const envelope = await gatewayJson<OhlcvEnvelope>(
           `/api/v1/quotes/ohlcv/${encodeURIComponent(ticker)}?time_frame=1min&from=${isoDate(from)}&to=${isoDate(to)}`,
+          undefined,
+          "intraday",
         );
         const rows = envelope.data ?? [];
         const latestSession = rows.at(-1)?.date.slice(0, 10) ?? null;

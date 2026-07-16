@@ -21,7 +21,7 @@ type SignalEnvelope = {
 };
 
 export async function GET(request: Request) {
-  const limited = await enforcePublicRateLimit(request, "signals", 90);
+  const limited = await enforcePublicRateLimit(request, "signals", 4);
   if (limited) return limited;
 
   try {
@@ -29,10 +29,14 @@ export async function GET(request: Request) {
     const tickers = stocks.map((stock) => stock.ticker);
     const cached = await withSharedApiCache(
       `signals-v1:${tickers.join(",")}`,
-      45_000,
+      60_000,
       async () => {
         const tickerCsv = encodeURIComponent(tickers.join(","));
-        const envelope = await gatewayJson<SignalEnvelope>(`/api/v1/signals?tickers=${tickerCsv}&limit=50`);
+        const envelope = await gatewayJson<SignalEnvelope>(
+          `/api/v1/signals?tickers=${tickerCsv}&limit=50`,
+          undefined,
+          "signals",
+        );
         const signals: SignalEvent[] = (envelope.data ?? []).map((item) => ({
           id: `${item.created_at ?? "unknown"}:${item.headline}`,
           headline: item.headline,

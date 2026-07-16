@@ -150,40 +150,119 @@ export async function putApiResponseCache(cacheKey: string, payload: string, exp
   else localStore().apiCache.set(cacheKey, entry);
 }
 
-export async function incrementApiRateLimit(bucketKey: string, windowStart: number) {
+export async function acquireRefreshLock(cacheKey: string, ttlMs = 30_000) {
   const redis = redisClient();
   if (redis) {
-    const redisKey = key("rate", `${bucketKey}:${windowStart}`);
-    const count = await redis.incr(redisKey);
-    if (count === 1) await redis.expire(redisKey, 120);
-    return count;
+    const token = crypto.randomUUID();
+    const acquired = await redis.set(key("refresh-lock", cacheKey), token, {
+      nx: true,
+      px: ttlMs,
+    });
+    return acquired === "OK" ? token : null;
+  }
+  return "local";
+}
+
+export async function releaseRefreshLock(cacheKey: string, token: string) {
+  const redis = redisClient();
+  if (!redis || token === "local") return;
+  try {
+    await redis.eval<string[], number>(
+      `if redis.call("GET", KEYS[1]) == ARGV[1] then
+         return redis.call("DEL", KEYS[1])
+       end
+       return 0`,
+      [key("refresh-lock", cacheKey)],
+      [token],
+    );
+  } catch (error) {
+    // The token-checked lock expires automatically; a failed cleanup must not
+    // discard an otherwise successful market-data refresh.
+    console.warn(`[drillr-cache] refresh lock cleanup failed for ${cacheKey}`, error);
+  }
+}
+
+export async function incrementApiRateLimits(
+  globalBucketKey: string,
+  routeBucketKey: string,
+  windowStart: number,
+) {
+  const redis = redisClient();
+  if (redis) {
+    const [globalCount, routeCount] = await redis.eval<[], [number, number]>(
+      `local global_count = redis.call("INCR", KEYS[1])
+       if global_count == 1 then redis.call("EXPIRE", KEYS[1], 120) end
+       local route_count = redis.call("INCR", KEYS[2])
+       if route_count == 1 then redis.call("EXPIRE", KEYS[2], 120) end
+       return {global_count, route_count}`,
+      [
+        key("rate", `${globalBucketKey}:${windowStart}`),
+        key("rate", `${routeBucketKey}:${windowStart}`),
+      ],
+      [],
+    );
+    return { globalCount: Number(globalCount), routeCount: Number(routeCount) };
   }
 
   const store = localStore();
   const now = Date.now();
-  const existing = store.rateLimits.get(bucketKey);
-  const entry = existing?.windowStart === windowStart
-    ? { windowStart, requestCount: existing.requestCount + 1, updatedAt: now }
-    : { windowStart, requestCount: 1, updatedAt: now };
-  store.rateLimits.set(bucketKey, entry);
+  const increment = (bucketKey: string) => {
+    const existing = store.rateLimits.get(bucketKey);
+    const entry = existing?.windowStart === windowStart
+      ? { windowStart, requestCount: existing.requestCount + 1, updatedAt: now }
+      : { windowStart, requestCount: 1, updatedAt: now };
+    store.rateLimits.set(bucketKey, entry);
+    return entry.requestCount;
+  };
+  const globalCount = increment(globalBucketKey);
+  const routeCount = increment(routeBucketKey);
   for (const [entryKey, value] of store.rateLimits) {
     if (value.updatedAt < now - 24 * 60 * 60 * 1000) store.rateLimits.delete(entryKey);
   }
-  return entry.requestCount;
+  return { globalCount, routeCount };
 }
 
-export async function takeGatewayDailyRequest(dayKey: string) {
+export async function reserveGatewayDailyRequest(
+  dayKey: string,
+  scope: string,
+  totalLimit: number,
+  scopeLimit: number,
+) {
   const redis = redisClient();
   if (redis) {
-    const redisKey = key("gateway-usage", dayKey);
-    const count = await redis.incr(redisKey);
-    if (count === 1) await redis.expire(redisKey, 3 * 24 * 60 * 60);
-    return count;
+    const [allowed, totalUsed, scopeUsed] = await redis.eval<string[], [number, number, number]>(
+      `local total = tonumber(redis.call("GET", KEYS[1]) or "0")
+       local scoped = tonumber(redis.call("GET", KEYS[2]) or "0")
+       if total >= tonumber(ARGV[1]) or scoped >= tonumber(ARGV[2]) then
+         return {0, total, scoped}
+       end
+       total = redis.call("INCR", KEYS[1])
+       scoped = redis.call("INCR", KEYS[2])
+       if total == 1 then redis.call("EXPIRE", KEYS[1], 259200) end
+       if scoped == 1 then redis.call("EXPIRE", KEYS[2], 259200) end
+       return {1, total, scoped}`,
+      [
+        key("gateway-usage", dayKey),
+        key("gateway-usage", `${dayKey}:${scope}`),
+      ],
+      [String(totalLimit), String(scopeLimit)],
+    );
+    return {
+      allowed: Number(allowed) === 1,
+      totalUsed: Number(totalUsed),
+      scopeUsed: Number(scopeUsed),
+    };
   }
   const store = localStore();
-  const count = (store.dailyUsage.get(dayKey) ?? 0) + 1;
-  store.dailyUsage.set(dayKey, count);
-  return count;
+  const totalUsed = store.dailyUsage.get(dayKey) ?? 0;
+  const scopeKey = `${dayKey}:${scope}`;
+  const scopeUsed = store.dailyUsage.get(scopeKey) ?? 0;
+  if (totalUsed >= totalLimit || scopeUsed >= scopeLimit) {
+    return { allowed: false, totalUsed, scopeUsed };
+  }
+  store.dailyUsage.set(dayKey, totalUsed + 1);
+  store.dailyUsage.set(scopeKey, scopeUsed + 1);
+  return { allowed: true, totalUsed: totalUsed + 1, scopeUsed: scopeUsed + 1 };
 }
 
 export async function getGatewayCircuit() {

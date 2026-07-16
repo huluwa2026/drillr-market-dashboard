@@ -1,7 +1,9 @@
 import {
+  acquireRefreshLock,
   getApiResponseCache,
-  incrementApiRateLimit,
+  incrementApiRateLimits,
   putApiResponseCache,
+  releaseRefreshLock,
 } from "../../db";
 
 type CachedResult<T> = {
@@ -48,15 +50,22 @@ export async function enforcePublicRateLimit(
   route: string,
   fallbackLimit: number,
 ) {
-  const limit = positiveInteger(process.env.PUBLIC_API_RATE_LIMIT_PER_MINUTE, fallbackLimit);
+  const globalLimit = positiveInteger(process.env.PUBLIC_API_RATE_LIMIT_PER_MINUTE, 20);
+  const routeVariable = `PUBLIC_API_${route.toUpperCase().replaceAll("-", "_")}_RATE_LIMIT_PER_MINUTE`;
+  const routeLimit = positiveInteger(process.env[routeVariable], fallbackLimit);
   const now = Date.now();
   const windowMs = 60_000;
   const windowStart = Math.floor(now / windowMs) * windowMs;
   const subject = await hmacSubject(clientAddress(request));
-  const count = await incrementApiRateLimit(`${route}:${subject}`, windowStart);
-  if (count <= limit) return null;
+  const { globalCount, routeCount } = await incrementApiRateLimits(
+    `all:${subject}`,
+    `${route}:${subject}`,
+    windowStart,
+  );
+  if (globalCount <= globalLimit && routeCount <= routeLimit) return null;
 
   const retryAfter = Math.max(1, Math.ceil((windowStart + windowMs - now) / 1000));
+  const limitedScope = globalCount > globalLimit ? "global" : route;
   return Response.json(
     { ok: false, error: "请求过于频繁，请稍后再试。" },
     {
@@ -64,6 +73,7 @@ export async function enforcePublicRateLimit(
       headers: {
         "Cache-Control": "private, no-store",
         "Retry-After": String(retryAfter),
+        "X-RateLimit-Scope": limitedScope,
       },
     },
   );
@@ -94,20 +104,43 @@ export async function withSharedApiCache<T>(
     return { value: JSON.parse(cached.payload) as T, state: "fresh" };
   }
 
-  try {
-    const value = await coalesceRequest(key, async () => {
+  return coalesceRequest(`api-refresh:${key}`, async () => {
+    const latest = await getApiResponseCache(key);
+    const checkedAt = Date.now();
+    if (latest && latest.expiresAt > checkedAt) {
+      return { value: JSON.parse(latest.payload) as T, state: "fresh" };
+    }
+
+    const lockKey = `api:${key}`;
+    const lockToken = await acquireRefreshLock(lockKey);
+    if (!lockToken) {
+      if (latest && checkedAt - latest.expiresAt <= staleTtlMs) {
+        return { value: JSON.parse(latest.payload) as T, state: "stale" };
+      }
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const peerRefresh = await getApiResponseCache(key);
+        if (peerRefresh && peerRefresh.expiresAt > Date.now()) {
+          return { value: JSON.parse(peerRefresh.payload) as T, state: "fresh" };
+        }
+      }
+      throw new Error(`Shared refresh already in progress for ${key}`);
+    }
+
+    try {
       const refreshed = await loader();
       await putApiResponseCache(key, JSON.stringify(refreshed), Date.now() + ttlMs);
-      return refreshed;
-    });
-    return { value, state: "refreshed" };
-  } catch (error) {
-    if (cached && now - cached.expiresAt <= staleTtlMs) {
-      console.warn(`[drillr-api] serving stale cache for ${key}`, error);
-      return { value: JSON.parse(cached.payload) as T, state: "stale" };
+      return { value: refreshed, state: "refreshed" };
+    } catch (error) {
+      if (latest && checkedAt - latest.expiresAt <= staleTtlMs) {
+        console.warn(`[drillr-api] serving stale cache for ${key}`, error);
+        return { value: JSON.parse(latest.payload) as T, state: "stale" };
+      }
+      throw error;
+    } finally {
+      await releaseRefreshLock(lockKey, lockToken);
     }
-    throw error;
-  }
+  });
 }
 
 export function protectedJson<T extends object>(

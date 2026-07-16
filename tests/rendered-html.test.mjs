@@ -56,13 +56,14 @@ test("ships a single-screen watchlist radar and stock focus cockpit", async () =
 });
 
 test("refreshes live quotes, intraday bars, and signals through guarded server APIs", async () => {
-  const [component, liveRoute, intradayRoute, signalsRoute, gateway, dashboardRoute, protection, database] = await Promise.all([
+  const [component, liveRoute, intradayRoute, signalsRoute, gateway, dashboardRoute, stocksRoute, protection, database] = await Promise.all([
     readFile(new URL("app/drillr-dashboard.tsx", root), "utf8"),
     readFile(new URL("app/api/live/route.ts", root), "utf8"),
     readFile(new URL("app/api/intraday/route.ts", root), "utf8"),
     readFile(new URL("app/api/signals/route.ts", root), "utf8"),
     readFile(new URL("app/api/gateway.ts", root), "utf8"),
     readFile(new URL("app/api/dashboard/route.ts", root), "utf8"),
+    readFile(new URL("app/api/stocks/route.ts", root), "utf8"),
     readFile(new URL("app/api/protection.ts", root), "utf8"),
     readFile(new URL("db/index.ts", root), "utf8"),
   ]);
@@ -92,15 +93,22 @@ test("refreshes live quotes, intraday bars, and signals through guarded server A
   assert.match(gateway, /Bearer/);
   assert.match(gateway, /cache:\s*"no-store"/);
   assert.match(gateway, /DRILLR_DAILY_REQUEST_LIMIT/);
+  assert.match(gateway, /DRILLR_DAILY_\$\{scope\.toUpperCase\(\)\}_LIMIT/);
+  assert.match(gateway, /reserveGatewayDailyRequest/);
   assert.match(gateway, /getGatewayCircuit/);
   assert.match(gateway, /recordGatewayFailure/);
   assert.match(protection, /enforcePublicRateLimit/);
+  assert.match(protection, /PUBLIC_API_RATE_LIMIT_PER_MINUTE/);
+  assert.match(protection, /incrementApiRateLimits/);
   assert.match(protection, /withSharedApiCache/);
   assert.match(protection, /coalesceRequest/);
   assert.match(database, /@upstash\/redis/);
   assert.match(database, /UPSTASH_REDIS_REST_URL/);
   assert.match(database, /KV_REST_API_URL/);
-  assert.match(database, /redis\.incr/);
+  assert.match(database, /acquireRefreshLock/);
+  assert.match(database, /releaseRefreshLock/);
+  assert.match(database, /refresh-lock/);
+  assert.match(database, /redis\.eval/);
   assert.match(database, /__drillrLocalStore__/);
   assert.doesNotMatch(database, /cloudflare:workers|D1Database/);
   for (const route of [liveRoute, intradayRoute, signalsRoute]) {
@@ -110,10 +118,12 @@ test("refreshes live quotes, intraday bars, and signals through guarded server A
   }
   assert.match(dashboardRoute, /getDashboardCache/);
   assert.match(dashboardRoute, /putDashboardCache/);
+  assert.match(dashboardRoute, /acquireRefreshLock/);
   assert.match(dashboardRoute, /roic_ttm/);
   assert.match(dashboardRoute, /price_return_10y/);
   assert.match(dashboardRoute, /latest_revenue_surprise/);
   assert.match(dashboardRoute, /dashboard-v7-dense/);
+  assert.match(stocksRoute, /enforcePublicRateLimit\(request, "stocks", 6\)/);
 });
 
 test("keeps local secrets ignored and publishes bilingual product metadata", async () => {
@@ -142,6 +152,10 @@ test("keeps local secrets ignored and publishes bilingual product metadata", asy
   assert.match(envExample, /^DRILLR_API_KEY=/m);
   assert.match(envExample, /^TRUSTED_IDENTITY_MODE=disabled$/m);
   assert.match(envExample, /^DRILLR_DAILY_REQUEST_LIMIT=/m);
+  assert.match(envExample, /^DRILLR_DAILY_LIVE_LIMIT=3000$/m);
+  assert.match(envExample, /^PUBLIC_API_RATE_LIMIT_PER_MINUTE=20$/m);
+  assert.match(envExample, /^PUBLIC_API_INTRADAY_RATE_LIMIT_PER_MINUTE=10$/m);
+  assert.match(envExample, /^PUBLIC_API_STOCKS_RATE_LIMIT_PER_MINUTE=6$/m);
   assert.match(envExample, /^UPSTASH_REDIS_REST_URL=$/m);
   assert.match(envExample, /^UPSTASH_REDIS_REST_TOKEN=$/m);
   assert.match(envExample, /^KV_REST_API_URL=$/m);
@@ -157,6 +171,7 @@ test("keeps local secrets ignored and publishes bilingual product metadata", asy
   assert.match(component, /data-locale=\{locale\}/);
   assert.match(notice, /market data/i);
   assert.match(deployment, /Vercel deployment/);
+  assert.match(deployment, /Required Vercel Firewall rule/);
   assert.match(deployment, /HMAC mode/);
   await access(new URL("LICENSE", root));
   await access(new URL("public/og-real.png", root));

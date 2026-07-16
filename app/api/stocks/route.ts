@@ -9,6 +9,7 @@ import {
   listDashboardStocks,
   upsertDashboardStock,
 } from "../../../db";
+import { enforcePublicRateLimit } from "../protection";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,9 @@ async function requireAdmin() {
   return identity;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const limited = await enforcePublicRateLimit(request, "stocks", 6);
+  if (limited) return limited;
   try {
     return Response.json({ stocks: await listDashboardStocks() });
   } catch (error) {

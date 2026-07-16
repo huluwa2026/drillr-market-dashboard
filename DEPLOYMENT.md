@@ -14,7 +14,9 @@ served with the deployment owner's Drillr API key.
 3. Store `DRILLR_API_KEY`, `RATE_LIMIT_SALT`, and any identity HMAC secret in
    Vercel Environment Variables. Never expose them through `NEXT_PUBLIC_`
    variables.
-4. Set an explicit `DRILLR_DAILY_REQUEST_LIMIT` that matches the account budget.
+4. Set the global and per-scope `DRILLR_DAILY_*_LIMIT` values to match the
+   account budget. The repository defaults cap the global budget at 5,000 calls
+   per UTC day.
 5. Set `ADMIN_EMAILS` if stock-universe writes should be enabled. An empty value
    intentionally disables production writes.
 6. Confirm that the Drillr plan permits the intended public display and
@@ -28,10 +30,26 @@ rate limits or quota tracking.
 ## Public API controls
 
 The application stores only a keyed HMAC of the Vercel-provided client address;
-raw addresses are not written to Redis. Live, intraday, and signal responses use
-short shared caches. Gateway calls also pass through a UTC-day budget and a
-failure circuit breaker. These controls reduce accidental or opportunistic
-abuse but are not a substitute for Vercel Firewall rules on a high-traffic demo.
+raw addresses are not written to Redis. Every read request consumes both a
+global per-client rate bucket and a route-specific bucket. Live, intraday, and
+signal responses use shared caches, and Redis refresh locks ensure only one
+Vercel instance refills an expired cache. Gateway calls must atomically reserve
+both a global UTC-day budget and a route-specific sub-budget before reaching
+Drillr. A failure circuit breaker remains the last upstream guard.
+
+## Required Vercel Firewall rule
+
+Application limits still consume a function invocation and Redis commands. Add
+this edge rule before making the production domain public:
+
+1. Open the Vercel project, then **Firewall → Configure → New Rule**.
+2. Match request paths beginning with `/api/`.
+3. Rate-limit by source IP to **20 requests per 1 minute**.
+4. Start in log mode on the protected preview, verify the dashboard normally
+   stays below the threshold, then enable the rate-limit action for production.
+
+Keep Vercel Authentication enabled for previews. Do not assume Standard
+Deployment Protection covers the public production domain.
 
 ## Administrator identity modes
 
@@ -78,7 +96,10 @@ output directory is required.
 - Run `npm run lint`, `npm test`, and `npm run test:e2e`.
 - Verify the preview origin cannot mutate `/api/stocks` without a valid identity.
 - Verify `429` responses appear when the configured rate is exceeded.
-- Verify Redis contains shared cache, rate-limit, quota, and circuit keys.
+- Verify Redis contains shared cache, refresh-lock, rate-limit, quota, and
+  circuit keys.
+- Verify the Vercel Firewall rejects the 21st `/api/*` request from one address
+  inside a minute before it invokes the application.
 - Confirm missing Redis credentials produce a production error rather than an
   in-memory fallback.
 - Enable GitHub dependency alerts, secret scanning, push protection, and

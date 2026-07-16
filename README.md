@@ -82,8 +82,10 @@ must configure Upstash Redis.
 | `KV_REST_API_URL` | Alternative | Compatible Vercel Marketplace alias for the Upstash REST endpoint. |
 | `KV_REST_API_TOKEN` | Alternative | Compatible Vercel Marketplace alias for the Upstash REST token. |
 | `REDIS_KEY_PREFIX` | No | Redis namespace; defaults to `drillr-market-dashboard:v1`. |
-| `PUBLIC_API_RATE_LIMIT_PER_MINUTE` | No | Per-client public API limit; defaults by route. |
-| `DRILLR_DAILY_REQUEST_LIMIT` | No | Maximum upstream Gateway calls per UTC day; defaults to `10000`. |
+| `PUBLIC_API_RATE_LIMIT_PER_MINUTE` | No | Global per-client API limit across all read routes; defaults to `20`. |
+| `PUBLIC_API_*_RATE_LIMIT_PER_MINUTE` | No | Route limits for `DASHBOARD`, `LIVE`, `SIGNALS`, `INTRADAY`, and `STOCKS`; defaults to `3`, `6`, `4`, `10`, and `6`. |
+| `DRILLR_DAILY_REQUEST_LIMIT` | No | Global upstream Gateway calls per UTC day; defaults to `5000`. |
+| `DRILLR_DAILY_*_LIMIT` | No | Upstream sub-budgets for `DASHBOARD`, `LIVE`, `SIGNALS`, and `INTRADAY`. |
 | `DRILLR_CIRCUIT_FAILURE_THRESHOLD` | No | Consecutive failures before opening the circuit; defaults to `5`. |
 | `DRILLR_CIRCUIT_COOLDOWN_SECONDS` | No | Open-circuit cooldown; defaults to `60`. |
 | `RATE_LIMIT_SALT` | Production | Random secret used to hash client addresses stored in Redis. |
@@ -110,15 +112,20 @@ running the end-to-end suite.
 
 ## Public deployment safety
 
-- Live quotes are shared through Redis for 20 seconds, intraday bars for 30
-  seconds, and signals for 45 seconds; the low-frequency core retains its longer cache.
-- Public routes enforce a per-client rate limit before touching Drillr.
-- Every upstream request consumes a configurable UTC-day budget. Five
-  consecutive failures open a default 60-second circuit.
+- Live quotes, intraday bars, and signals use 60-second shared Redis caches;
+  the low-frequency core retains its longer cache.
+- Public routes consume a global per-client rate bucket plus a stricter
+  route-specific bucket before touching Drillr.
+- A Redis refresh lock prevents multiple Vercel instances from refilling the
+  same expired cache concurrently.
+- Every upstream request atomically consumes both a global UTC-day budget and a
+  route-specific sub-budget. Five consecutive failures open a default
+  60-second circuit.
 - Expired cached data may be served briefly while Drillr is unavailable.
 - Upstream error details are logged server-side and never returned to browsers.
 - Production admin writes are disabled unless `ADMIN_EMAILS` is non-empty and
-  the identity mode is explicitly configured. See [DEPLOYMENT.md](./DEPLOYMENT.md).
+  the identity mode is explicitly configured. A matching Vercel Firewall rule
+  is required before public launch; see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## Data, brand, and test fixtures
 

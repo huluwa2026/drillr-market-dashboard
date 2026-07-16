@@ -2,7 +2,7 @@ import {
   getGatewayCircuit,
   recordGatewayFailure,
   recordGatewaySuccess,
-  takeGatewayDailyRequest,
+  reserveGatewayDailyRequest,
 } from "../../db";
 
 type GatewayErrorEnvelope = {
@@ -16,22 +16,33 @@ export class GatewayProtectionError extends Error {
   }
 }
 
+export type GatewayBudgetScope = "dashboard" | "live" | "signals" | "intraday";
+
+const DEFAULT_SCOPE_LIMITS: Record<GatewayBudgetScope, number> = {
+  dashboard: 500,
+  live: 3_000,
+  signals: 1_000,
+  intraday: 2_000,
+};
+
 function positiveInteger(value: string | undefined, fallback: number) {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-async function acquireGatewayRequest() {
+async function acquireGatewayRequest(scope: GatewayBudgetScope) {
   const state = await getGatewayCircuit();
   if ((state?.openUntil ?? 0) > Date.now()) {
     throw new GatewayProtectionError("Drillr Gateway circuit is temporarily open");
   }
 
-  const dailyLimit = positiveInteger(process.env.DRILLR_DAILY_REQUEST_LIMIT, 10_000);
+  const dailyLimit = positiveInteger(process.env.DRILLR_DAILY_REQUEST_LIMIT, 5_000);
+  const scopeVariable = `DRILLR_DAILY_${scope.toUpperCase()}_LIMIT`;
+  const scopeLimit = positiveInteger(process.env[scopeVariable], DEFAULT_SCOPE_LIMITS[scope]);
   const dayKey = new Date().toISOString().slice(0, 10);
-  const used = await takeGatewayDailyRequest(dayKey);
-  if (used > dailyLimit) {
-    throw new GatewayProtectionError("Daily Drillr Gateway request budget exhausted");
+  const reservation = await reserveGatewayDailyRequest(dayKey, scope, dailyLimit, scopeLimit);
+  if (!reservation.allowed) {
+    throw new GatewayProtectionError(`Daily Drillr Gateway request budget exhausted for ${scope}`);
   }
 }
 
@@ -41,12 +52,16 @@ async function recordFailure() {
   await recordGatewayFailure(threshold, cooldownSeconds * 1000);
 }
 
-export async function gatewayJson<T>(path: string, init?: RequestInit): Promise<T> {
+export async function gatewayJson<T>(
+  path: string,
+  init?: RequestInit,
+  budgetScope: GatewayBudgetScope = "dashboard",
+): Promise<T> {
   const apiKey = process.env.DRILLR_API_KEY;
   const baseUrl = (process.env.DRILLR_GATEWAY_URL ?? "https://gateway.drillr.ai").replace(/\/$/, "");
   if (!apiKey) throw new Error("DRILLR_API_KEY is not configured");
 
-  await acquireGatewayRequest();
+  await acquireGatewayRequest(budgetScope);
 
   let response: Response;
   try {
@@ -89,11 +104,14 @@ export type SqlEnvelope = {
   error?: { code?: string; message?: string };
 };
 
-export async function runSql(sql: string): Promise<SqlEnvelope> {
+export async function runSql(
+  sql: string,
+  budgetScope: GatewayBudgetScope = "dashboard",
+): Promise<SqlEnvelope> {
   const envelope = await gatewayJson<SqlEnvelope>("/api/v1/data/run_sql", {
     method: "POST",
     body: JSON.stringify({ sql }),
-  });
+  }, budgetScope);
   if (!envelope.data?.rows) throw new Error(envelope.error?.message || "run_sql returned no rows");
   return envelope;
 }

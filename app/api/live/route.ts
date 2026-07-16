@@ -17,7 +17,7 @@ type QuoteEnvelope = {
 };
 
 export async function GET(request: Request) {
-  const limited = await enforcePublicRateLimit(request, "live", 120);
+  const limited = await enforcePublicRateLimit(request, "live", 6);
   if (limited) return limited;
 
   try {
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     const tickerList = stocks.map((stock) => stock.ticker).join(",");
     const cached = await withSharedApiCache(
       `live-v1:${tickerList}`,
-      20_000,
+      60_000,
       async () => {
         const symbols = encodeURIComponent(tickerList);
         const indexSql = `
@@ -36,8 +36,8 @@ export async function GET(request: Request) {
           LIMIT 20`;
 
         const [quoteEnvelope, indexEnvelope] = await Promise.all([
-          gatewayJson<QuoteEnvelope>(`/api/v1/quotes/batch?symbols=${symbols}`),
-          runSql(indexSql).catch(() => null),
+          gatewayJson<QuoteEnvelope>(`/api/v1/quotes/batch?symbols=${symbols}`, undefined, "live"),
+          runSql(indexSql, "live").catch(() => null),
         ]);
 
         return {

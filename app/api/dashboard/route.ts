@@ -1,7 +1,9 @@
 import {
+  acquireRefreshLock,
   getDashboardCache,
   listDashboardStocks,
   putDashboardCache,
+  releaseRefreshLock,
 } from "../../../db";
 import type {
   AltCategory,
@@ -95,6 +97,10 @@ function buildSchemaGroups(columns: string[]): SchemaGroup[] {
 
 function latest(values: Array<string | null | undefined>) {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
+}
+
+function dashboardCacheTtl(payload: DashboardPayload) {
+  return payload.partial ? PARTIAL_CACHE_TTL_MS : CACHE_TTL_MS;
 }
 
 async function fetchDashboard(): Promise<DashboardPayload> {
@@ -291,7 +297,7 @@ async function fetchDashboard(): Promise<DashboardPayload> {
 }
 
 export async function GET(request: Request) {
-  const limited = await enforcePublicRateLimit(request, "dashboard", 60);
+  const limited = await enforcePublicRateLimit(request, "dashboard", 3);
   if (limited) return limited;
 
   const stockOptions = await listDashboardStocks();
@@ -301,7 +307,7 @@ export async function GET(request: Request) {
   const cached = await getDashboardCache(cacheKey);
   const ageMs = cached ? Date.now() - cached.updatedAt : Number.POSITIVE_INFINITY;
   const cachedPayload = cached ? JSON.parse(cached.payload) as DashboardPayload : null;
-  const cacheTtl = cachedPayload?.partial ? PARTIAL_CACHE_TTL_MS : CACHE_TTL_MS;
+  const cacheTtl = cachedPayload ? dashboardCacheTtl(cachedPayload) : CACHE_TTL_MS;
 
   if (cachedPayload && ageMs < cacheTtl) {
     return Response.json(
@@ -319,10 +325,57 @@ export async function GET(request: Request) {
   }
 
   try {
-    const payload = await coalesceRequest(cacheKey, fetchDashboard);
-    await putDashboardCache(cacheKey, JSON.stringify(payload));
-    return Response.json(payload, {
-      headers: { "Cache-Control": "private, no-store" },
+    const refreshed = await coalesceRequest(`dashboard-refresh:${cacheKey}`, async () => {
+      const latestCache = await getDashboardCache(cacheKey);
+      if (latestCache) {
+        const latestPayload = JSON.parse(latestCache.payload) as DashboardPayload;
+        const latestAgeMs = Date.now() - latestCache.updatedAt;
+        if (latestAgeMs < dashboardCacheTtl(latestPayload)) {
+          return { payload: latestPayload, ageMs: latestAgeMs, state: "fresh" as const };
+        }
+      }
+
+      const lockKey = `dashboard:${cacheKey}`;
+      const lockToken = await acquireRefreshLock(lockKey);
+      if (!lockToken) {
+        if (latestCache) {
+          return {
+            payload: JSON.parse(latestCache.payload) as DashboardPayload,
+            ageMs: Date.now() - latestCache.updatedAt,
+            state: "stale" as const,
+          };
+        }
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          const peerRefresh = await getDashboardCache(cacheKey);
+          if (peerRefresh) {
+            return {
+              payload: JSON.parse(peerRefresh.payload) as DashboardPayload,
+              ageMs: Date.now() - peerRefresh.updatedAt,
+              state: "fresh" as const,
+            };
+          }
+        }
+        throw new Error("Dashboard refresh is already in progress");
+      }
+
+      try {
+        const payload = await fetchDashboard();
+        await putDashboardCache(cacheKey, JSON.stringify(payload));
+        return { payload, ageMs: 0, state: "refreshed" as const };
+      } finally {
+        await releaseRefreshLock(lockKey, lockToken);
+      }
+    });
+    return Response.json({
+      ...refreshed.payload,
+      stale: refreshed.state === "stale",
+      cacheAgeSeconds: Math.max(0, Math.round(refreshed.ageMs / 1000)),
+    }, {
+      headers: {
+        "Cache-Control": "private, no-store",
+        "X-Drillr-Cache": refreshed.state,
+      },
     });
   } catch (error) {
     if (cached) {
