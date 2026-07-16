@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { verifyIdentitySignature } from "./auth-policy";
 
 export type ChatGPTUser = {
   displayName: string;
@@ -11,6 +12,8 @@ const USER_EMAIL_HEADER = "oai-authenticated-user-email";
 const USER_FULL_NAME_HEADER = "oai-authenticated-user-full-name";
 const USER_FULL_NAME_ENCODING_HEADER =
   "oai-authenticated-user-full-name-encoding";
+const IDENTITY_SIGNATURE_HEADER = "x-drillr-identity-signature";
+const IDENTITY_TIMESTAMP_HEADER = "x-drillr-identity-timestamp";
 const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SIGN_IN_PATH = "/signin-with-chatgpt";
 const SIGN_OUT_PATH = "/signout-with-chatgpt";
@@ -22,6 +25,20 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   if (!email) return null;
 
   const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
+  const mode = process.env.TRUSTED_IDENTITY_MODE ?? "disabled";
+  if (mode === "hmac") {
+    const verified = await verifyIdentitySignature({
+      email,
+      encodedFullName: encodedFullName ?? "",
+      timestampValue: requestHeaders.get(IDENTITY_TIMESTAMP_HEADER),
+      signatureValue: requestHeaders.get(IDENTITY_SIGNATURE_HEADER),
+      secret: process.env.TRUSTED_IDENTITY_HMAC_SECRET,
+    });
+    if (!verified) return null;
+  } else if (mode !== "openai-sites") {
+    return null;
+  }
+
   const fullName =
     encodedFullName &&
     requestHeaders.get(USER_FULL_NAME_ENCODING_HEADER) === PERCENT_ENCODED_UTF8
@@ -33,6 +50,10 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
     email,
     fullName,
   };
+}
+
+export function identitySignInAvailable() {
+  return process.env.TRUSTED_IDENTITY_MODE === "openai-sites";
 }
 
 export async function requireChatGPTUser(

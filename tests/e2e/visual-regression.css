@@ -1,0 +1,14 @@
+/*
+ * Pixel baselines compare geometry, charts, color states, and panel density.
+ * Text is transparent so macOS and Linux fallback glyph rasterization does not
+ * create false CI failures; semantic text and overlap are asserted separately.
+ */
+.market-terminal :is(h1, h2, h3, p, span, b, strong, em, small, time, a, button, label, input) {
+  color: transparent !important;
+  text-shadow: none !important;
+  caret-color: transparent !important;
+}
+
+svg text {
+  fill: transparent !important;
+}

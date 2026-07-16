@@ -8,5 +8,6 @@
 
 - [ ] `npm run lint`
 - [ ] `npm test`
+- [ ] `npm run test:e2e`
 - [ ] No secrets or customer data are included
-- [ ] Screenshots are attached for visual changes
+- [ ] Playwright baselines and screenshots are updated for intentional visual changes

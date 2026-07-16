@@ -1,4 +1,9 @@
-import { chatGPTSignInPath, getChatGPTUser } from "../../chatgpt-auth";
+import {
+  chatGPTSignInPath,
+  getChatGPTUser,
+  identitySignInAvailable,
+} from "../../chatgpt-auth";
+import { isSameOriginMutation } from "../../auth-policy";
 import {
   deleteDashboardStock,
   listDashboardStocks,
@@ -32,6 +37,9 @@ async function requireAdmin() {
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
 
+  if (process.env.NODE_ENV === "production" && allowlist.length === 0) {
+    return false;
+  }
   if (allowlist.length > 0 && !allowlist.includes(identity.email.toLowerCase())) {
     return false;
   }
@@ -47,12 +55,15 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!isSameOriginMutation(request)) {
+    return Response.json({ error: "拒绝跨站管理请求。" }, { status: 403 });
+  }
   const admin = await requireAdmin();
   if (!admin) {
     return Response.json(
       {
         error: admin === false ? "当前账号没有管理员权限。" : "请先验证管理员身份。",
-        signIn: admin === null ? chatGPTSignInPath("/") : undefined,
+        signIn: admin === null && identitySignInAvailable() ? chatGPTSignInPath("/") : undefined,
       },
       { status: admin === false ? 403 : 401 },
     );
@@ -72,12 +83,15 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  if (!isSameOriginMutation(request)) {
+    return Response.json({ error: "拒绝跨站管理请求。" }, { status: 403 });
+  }
   const admin = await requireAdmin();
   if (!admin) {
     return Response.json(
       {
         error: admin === false ? "当前账号没有管理员权限。" : "请先验证管理员身份。",
-        signIn: admin === null ? chatGPTSignInPath("/") : undefined,
+        signIn: admin === null && identitySignInAvailable() ? chatGPTSignInPath("/") : undefined,
       },
       { status: admin === false ? 403 : 401 },
     );

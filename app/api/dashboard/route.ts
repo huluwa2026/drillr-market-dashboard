@@ -16,6 +16,12 @@ import type {
   SignalEvent,
   Snapshot,
 } from "../../dashboard-types";
+import { gatewayJson, mapRows, runSql } from "../gateway";
+import {
+  coalesceRequest,
+  enforcePublicRateLimit,
+  serviceUnavailable,
+} from "../protection";
 
 export const dynamic = "force-dynamic";
 
@@ -33,11 +39,6 @@ const ALT_LABELS: Record<string, string> = {
   "Critical Minerals": "关键矿产",
 };
 
-type SqlEnvelope = {
-  data?: { columns?: string[]; rows?: unknown[][]; rowCount?: number };
-  error?: { code?: string; message?: string };
-};
-
 type CatalogEnvelope = {
   data?: Array<{
     category: string;
@@ -50,70 +51,23 @@ type SchemaEnvelope = {
 };
 
 type SignalEnvelope = {
-  data?: {
-    items?: Array<{
-      id: number;
-      headline: string;
-      summary: string | null;
-      suggested_tickers?: string[];
-      score?: number;
-      trigger_sources?: Array<{ source_name?: string }>;
-      earliest_trigger_event_time?: string;
-      created_at?: string;
-      tags?: { event_types?: string[] };
-    }>;
-  };
+  data?: Array<{
+    headline: string;
+    summary: string | null;
+    suggested_tickers?: string[];
+    sector?: string[];
+    created_at?: string;
+  }>;
 };
 
 function sqlLiteral(value: string) {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-function mapRows<T>(envelope: SqlEnvelope): T[] {
-  const columns = envelope.data?.columns ?? [];
-  const rows = envelope.data?.rows ?? [];
-  return rows.map((row) =>
-    Object.fromEntries(columns.map((column, index) => [column, row[index]])),
-  ) as T[];
-}
-
-function parsePayloadRows<T>(envelope: SqlEnvelope, kind: string): T[] {
+function parsePayloadRows<T>(envelope: Awaited<ReturnType<typeof runSql>>, kind: string): T[] {
   return mapRows<{ kind: string; payload: string }>(envelope)
     .filter((row) => row.kind === kind)
     .map((row) => JSON.parse(row.payload) as T);
-}
-
-async function gatewayJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const apiKey = process.env.DRILLR_API_KEY;
-  const baseUrl = (process.env.DRILLR_GATEWAY_URL ?? "https://gateway.drillr.ai").replace(/\/$/, "");
-  if (!apiKey) throw new Error("DRILLR_API_KEY is not configured");
-
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-    signal: AbortSignal.timeout(15_000),
-    cache: "no-store",
-  });
-  const payload = (await response.json()) as T & { error?: { message?: string } | string };
-  if (!response.ok) {
-    const detail = typeof payload.error === "string" ? payload.error : payload.error?.message;
-    throw new Error(detail || `Drillr Gateway returned ${response.status}`);
-  }
-  return payload;
-}
-
-async function runSql(sql: string) {
-  const envelope = await gatewayJson<SqlEnvelope>("/api/v1/data/run_sql", {
-    method: "POST",
-    body: JSON.stringify({ sql }),
-  });
-  if (!envelope.data?.rows) throw new Error(envelope.error?.message || "run_sql returned no rows");
-  return envelope;
 }
 
 function buildSchemaGroups(columns: string[]): SchemaGroup[] {
@@ -155,11 +109,34 @@ async function fetchDashboard(): Promise<DashboardPayload> {
   const manifestSql = `
     SELECT kind, payload FROM (
       SELECT 1 AS ord, 'snapshot' AS kind, to_jsonb(s)::text AS payload FROM (
-        SELECT ticker, company_name, sector, exchange, price_current, market_capitalization,
-               pe_ratio_ttm, pe_ratio_fwd, gross_profit_margin_ttm, net_income_margin_ttm,
-               revenue_growth_ttm, eps_growth_fwd, price_return_1d, price_return_5d,
-               price_return_1m, price_return_3m, price_return_ytd, price_return_1y,
-               rsi_14_day, sma_signal_50d, latest_eps_surprise, next_q_eps_estimate_avg
+        SELECT ticker, company_name, industry, sector, country, exchange, price_current,
+               shares_outstanding, market_capitalization, enterprise_value,
+               pe_ratio_ttm, pe_ratio_fwd, pe_calendar_2026, pe_calendar_2027, pe_calendar_2028,
+               peg_ratio_ttm, pb_ratio_ttm, ps_ratio_ttm, ps_ratio_fwd, pcf_ratio_ttm,
+               ev_to_sales_ttm, ev_to_ebitda_ttm, ev_to_ebit_ttm,
+               gross_profit_margin_ttm, ebit_margin_ttm, ebitda_margin_ttm,
+               net_income_margin_ttm, fcf_margin_ttm, roe_ttm, roa_ttm, roic_ttm,
+               capex_to_sales_ttm, asset_turnover_ttm, cash_from_operations_ttm,
+               cash_per_share_ttm, revenue_growth_ttm, ebitda_growth_ttm, ebit_growth_ttm,
+               eps_growth_ttm, fcf_growth_ttm, ocf_growth_ttm, revenue_growth_fwd,
+               ebitda_growth_fwd, eps_growth_fwd, revenue_cagr_3y, eps_cagr_3y,
+               fcf_cagr_3y, revenue_cagr_5y, eps_cagr_5y, fcf_cagr_5y,
+               dividend_rate_ttm, dividend_yield_ttm, payout_ratio_ttm,
+               dividend_growth_1y, dividend_cagr_3y, dividend_cagr_5y,
+               debt_to_equity, net_debt_to_equity, debt_to_assets, debt_to_ebitda,
+               net_debt_to_ebitda, interest_coverage, current_ratio, quick_ratio,
+               price_return_1d, price_return_5d, price_return_1m, price_return_3m,
+               price_return_6m, price_return_ytd, price_return_1y, price_return_3y,
+               price_return_5y, price_return_10y, sma_10_day, price_vs_sma_10d,
+               sma_signal_10d, sma_50_day, price_vs_sma_50d, sma_signal_50d,
+               sma_100_day, price_vs_sma_100d, sma_signal_100d, sma_200_day,
+               price_vs_sma_200d, sma_signal_200d, rsi_14_day, rsi_signal,
+               eps_beats_last_12q, eps_misses_last_12q, revenue_beats_last_12q,
+               revenue_misses_last_12q, latest_eps_actual, latest_eps_estimate,
+               latest_eps_surprise, latest_revenue_actual, latest_revenue_estimate,
+               latest_revenue_surprise, avg_eps_surprise_last_4q,
+               avg_revenue_surprise_last_4q, next_q_eps_estimate_avg,
+               next_q_revenue_estimate_avg
         FROM company_snapshot WHERE ticker IN (${tickerSql})
       ) s
       UNION ALL
@@ -226,7 +203,7 @@ async function fetchDashboard(): Promise<DashboardPayload> {
       runSql(historySql),
       runSql(eventsSql).catch(() => null),
       gatewayJson<SignalEnvelope>(
-        `/api/v1/data/signal_list?tickers=${tickerCsv}&order_by=created_at&limit=20`,
+        `/api/v1/signals?tickers=${tickerCsv}&limit=20`,
       ),
       gatewayJson<CatalogEnvelope>(`/api/v1/data/list_tables?categories=${firstCatalog}`),
       gatewayJson<CatalogEnvelope>(`/api/v1/data/list_tables?categories=${secondCatalog}`),
@@ -250,20 +227,17 @@ async function fetchDashboard(): Promise<DashboardPayload> {
   const earnings = events ? parsePayloadRows<EarningsEvent>(events, "earnings") : [];
   const ownership = events ? parsePayloadRows<OwnershipEvent>(events, "ownership") : [];
 
-  const signalItems = signalsEnvelope.data?.items ?? [];
+  const signalItems = signalsEnvelope.data ?? [];
   const signals: SignalEvent[] = signalItems.map((item) => ({
-    id: item.id,
+    id: `${item.created_at ?? "unknown"}:${item.headline}`,
     headline: item.headline,
     summary: item.summary ? item.summary.slice(0, 240) : null,
     tickers: (item.suggested_tickers ?? []).filter((ticker) => tickers.includes(ticker)),
-    score: Number(item.score ?? 0),
-    sourceNames: (item.trigger_sources ?? [])
-      .map((source) => source.source_name)
-      .filter((name): name is string => Boolean(name))
-      .slice(0, 2),
-    eventTypes: item.tags?.event_types?.slice(0, 2) ?? [],
-    createdAt: item.created_at ?? item.earliest_trigger_event_time ?? "",
-    triggerAt: item.earliest_trigger_event_time ?? item.created_at ?? "",
+    score: null,
+    sourceNames: [],
+    eventTypes: item.sector?.slice(0, 2) ?? [],
+    createdAt: item.created_at ?? "",
+    triggerAt: item.created_at ?? "",
   }));
 
   const rawCatalog = [...(catalogA.data ?? []), ...(catalogB.data ?? [])];
@@ -316,9 +290,12 @@ async function fetchDashboard(): Promise<DashboardPayload> {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const limited = await enforcePublicRateLimit(request, "dashboard", 60);
+  if (limited) return limited;
+
   const stockOptions = await listDashboardStocks();
-  const cacheKey = `dashboard-v6:${stockOptions
+  const cacheKey = `dashboard-v7-dense:${stockOptions
     .map((stock) => `${stock.ticker}:${stock.name}`)
     .join("|")}`;
   const cached = await getDashboardCache(cacheKey);
@@ -327,33 +304,42 @@ export async function GET() {
   const cacheTtl = cachedPayload?.partial ? PARTIAL_CACHE_TTL_MS : CACHE_TTL_MS;
 
   if (cachedPayload && ageMs < cacheTtl) {
-    return Response.json({
-      ...cachedPayload,
-      cacheAgeSeconds: Math.max(0, Math.round(ageMs / 1000)),
-    });
+    return Response.json(
+      {
+        ...cachedPayload,
+        cacheAgeSeconds: Math.max(0, Math.round(ageMs / 1000)),
+      },
+      {
+        headers: {
+          "Cache-Control": "private, no-store",
+          "X-Drillr-Cache": "fresh",
+        },
+      },
+    );
   }
 
   try {
-    const payload = await fetchDashboard();
+    const payload = await coalesceRequest(cacheKey, fetchDashboard);
     await putDashboardCache(cacheKey, JSON.stringify(payload));
     return Response.json(payload, {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (error) {
     if (cached) {
-      return Response.json({
-        ...cachedPayload!,
-        stale: true,
-        cacheAgeSeconds: Math.max(0, Math.round(ageMs / 1000)),
-      });
+      return Response.json(
+        {
+          ...cachedPayload!,
+          stale: true,
+          cacheAgeSeconds: Math.max(0, Math.round(ageMs / 1000)),
+        },
+        {
+          headers: {
+            "Cache-Control": "private, no-store",
+            "X-Drillr-Cache": "stale",
+          },
+        },
+      );
     }
-    return Response.json(
-      {
-        ok: false,
-        error: "真实数据源暂时不可用",
-        detail: error instanceof Error ? error.message : "Unknown gateway error",
-      },
-      { status: 503 },
-    );
+    return serviceUnavailable("dashboard core", "真实数据源暂时不可用", error);
   }
 }

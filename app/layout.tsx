@@ -18,8 +18,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "drillr Market Dashboard｜美股数据大盘";
-  const description = "一屏查看 Drillr Gateway 真实行情、结构化字段、另类数据与多类市场可视化，包括 K 线、事件信号、分析师共识、目标价和所有权动态。";
+  const title = "drillr Market Command｜实时自选股驾驶舱";
+  const description = "不滚动的高密度实时自选股驾驶舱：先用自选雷达发现变化，再进入单股聚焦页查看可交互五分钟 K 线、实时事件与 200+ 图表化数据标记。";
 
   return {
     metadataBase: new URL(origin),
@@ -31,7 +31,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       type: "website",
       url: origin,
-      images: [{ url: `${origin}/og-real.png`, width: 1280, height: 720, alt: "drillr 美股数据底座真实页面：四只股票与多类数据图形在一屏内平铺。" }],
+      images: [{ url: `${origin}/og-real.png`, width: 1280, height: 720, alt: "drillr 实时自选股驾驶舱。" }],
     },
     twitter: {
       card: "summary_large_image",

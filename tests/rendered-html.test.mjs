@@ -4,7 +4,7 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
-test("renders a desktop one-screen dashboard with tablet and mobile flow", async () => {
+test("ships a single-screen watchlist radar and stock focus cockpit", async () => {
   const [page, component, css] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/drillr-dashboard.tsx", root), "utf8"),
@@ -12,69 +12,115 @@ test("renders a desktop one-screen dashboard with tablet and mobile flow", async
   ]);
 
   assert.match(page, /<DrillrDashboard \/>/);
-  assert.match(component, /fetch\("\/api\/dashboard"/);
-  assert.match(component, /Drillr Gateway/);
-  assert.match(component, /真实日线/);
-  assert.match(component, /盘前 \/ 盘后 \/ 隔夜/);
-  assert.match(component, /所有权动态/);
-  assert.match(component, /data-admin-open=\{adminOpen/);
-  assert.doesNotMatch(component, /fallbackSnapshot|SNAPSHOTS|EVIDENCE_EVENTS|MARKET_INDEX|SIGNAL_PIPELINES/);
-  assert.doesNotMatch(component, /requestAnimationFrame|cancelAnimationFrame|--mark-delay|--tile-delay/);
+  assert.match(component, /type ViewMode = "focus" \| "radar"/);
+  assert.match(component, /单股聚焦/);
+  assert.match(component, /自选雷达/);
+  assert.match(component, /selectTicker/);
+  assert.match(component, /syncUrl/);
+  assert.match(component, /WATCHLIST RADAR/);
+  assert.match(component, /WHAT CHANGED/);
+  assert.match(component, /最新交易日 K 线/);
+  assert.match(component, /14 METRICS/);
+  assert.match(component, /高密度自选扫描器/);
+  assert.equal((component.match(/<VisualDataPanel /g) ?? []).length, 7);
+  for (const domain of ["VALUATION SPECTRUM", "ECONOMIC QUALITY", "GROWTH VECTOR", "BALANCE & PAYOUT", "RETURN SURFACE", "TREND POSITION", "EXPECTATION MAP"]) {
+    assert.match(component, new RegExp(`eyebrow="${domain.replace(/[&]/g, "\\&")}"`));
+  }
+  assert.match(component, /aggregateCandles\(sourcePoints, usingMinute \? 5 : 1\)/);
+  assert.match(component, /data-chart-type="candlestick"/);
+  assert.match(component, /candle-wick/);
+  assert.match(component, /onPointerMove=\{selectFromPointer\}/);
+  assert.match(component, /chart-tooltip/);
+  assert.match(component, /chart-scrubber/);
+  assert.doesNotMatch(component, /Math\.random|mockSnapshot|fallbackSnapshot/);
 
   assert.match(css, /height:\s*100dvh/);
   assert.match(css, /overflow:\s*hidden/);
-  assert.match(css, /grid-template-rows/);
+  assert.match(css, /\.focus-layout\s*\{/);
+  assert.match(css, /\.radar-layout\s*\{/);
+  assert.match(css, /grid-template-rows:\s*96px 264px minmax\(0,1fr\)/);
+  assert.match(css, /grid-template-columns:\s*repeat\(16,minmax\(0,1fr\)\)/);
+  assert.match(css, /market-terminal\[data-view="focus"\] \.watch-strip \{ display: none/);
+  assert.match(css, /\.terminal-workspace \{ grid-row: 3; \}/);
+  assert.match(css, /\.terminal-statusbar \{ grid-row: 4; \}/);
+  assert.match(css, /return-heatmap/);
+  assert.match(css, /metric-bar-chart/);
+  assert.match(component, /balance-ratio-groups/);
+  assert.match(css, /\.balance-ratio-groups \{[^}]*grid-template-rows:\s*62% 38%/s);
+  assert.doesNotMatch(css, /\.balance-visual-body > div \{/);
+  assert.match(css, /quoteUpdateFlash/);
+  assert.match(css, /chart-crosshair/);
   assert.match(css, /@media\s*\(max-width:\s*1024px\)/);
-  assert.match(css, /@media\s*\(max-width:\s*640px\)/);
   assert.match(css, /overflow-y:\s*auto/);
-  assert.match(css, /grid-template-columns:\s*repeat\(2/);
-  const keyframes = [...css.matchAll(/@keyframes\s+([a-zA-Z0-9_-]+)/g)].map((match) => match[1]).sort();
-  assert.deepEqual(keyframes, ["coverageFlip", "gatewayOrbit", "signalOrbit"]);
-  const activeAnimations = [...css.matchAll(/animation:\s*([^;]+)/g)].map((match) => match[1]).filter((value) => !value.startsWith("none"));
-  assert.equal(activeAnimations.length, 3);
-  for (const animation of activeAnimations) assert.match(animation, /infinite/);
-  assert.doesNotMatch(css, /\.radial-value\s*\{[^}]*animation:/);
-  assert.doesNotMatch(css, /\.stock-tile\s*\{[^}]*animation:/);
-  assert.doesNotMatch(css, /\.ownership-bubbles\s*>\s*div\s*>\s*i\s*\{[^}]*animation:/);
-  assert.doesNotMatch(css, /transition(?:-[a-z-]+)?\s*:/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  assert.doesNotMatch(component, /signal-sweep|tile-beam/);
-  assert.match(css, /\.cockpit-header::after\s*\{\s*display:\s*none/);
-  assert.match(css, /\.universe-title i\s*\{\s*display:\s*none/);
-  assert.match(css, /\.core-panel::after\s*\{\s*display:\s*none/);
-  assert.match(component, /data-admin-open=\{adminOpen/);
-  assert.doesNotMatch(css, /backdrop-filter\s*:/);
 });
 
-test("keeps gateway credentials server-side and caches real payloads", async () => {
-  const [route, db, layout] = await Promise.all([
+test("refreshes live quotes, intraday bars, and signals through guarded server APIs", async () => {
+  const [component, liveRoute, intradayRoute, signalsRoute, gateway, dashboardRoute, protection, database] = await Promise.all([
+    readFile(new URL("app/drillr-dashboard.tsx", root), "utf8"),
+    readFile(new URL("app/api/live/route.ts", root), "utf8"),
+    readFile(new URL("app/api/intraday/route.ts", root), "utf8"),
+    readFile(new URL("app/api/signals/route.ts", root), "utf8"),
+    readFile(new URL("app/api/gateway.ts", root), "utf8"),
     readFile(new URL("app/api/dashboard/route.ts", root), "utf8"),
+    readFile(new URL("app/api/protection.ts", root), "utf8"),
     readFile(new URL("db/index.ts", root), "utf8"),
-    readFile(new URL("app/layout.tsx", root), "utf8"),
   ]);
 
-  assert.match(route, /process\.env\.DRILLR_API_KEY/);
-  assert.match(route, /\/api\/v1\/data\/run_sql/);
-  assert.match(route, /\/api\/v1\/data\/signal_list/);
-  assert.match(route, /\/api\/v1\/data\/list_tables/);
-  assert.match(route, /getDashboardCache/);
-  assert.match(route, /putDashboardCache/);
-  assert.match(route, /真实数据源暂时不可用/);
-  assert.doesNotMatch(route, /mock|Math\.random|fallback/i);
+  assert.match(component, /fetch\("\/api\/live"/);
+  assert.match(component, /fetch\("\/api\/signals"/);
+  assert.match(component, /\/api\/intraday\?ticker=/);
+  assert.match(component, /30_000/);
+  assert.match(component, /60_000/);
+  assert.match(component, /document\.visibilityState === "visible"/);
+  assert.match(component, /quoteMoves/);
+  assert.match(component, /data-live-phase=\{livePulse\}/);
+  assert.match(component, /data-signal-phase=\{signalPulse\}/);
+  assert.match(component, /data-chart-phase=\{chartPulse\}/);
+  assert.match(component, /chart-candle \$\{direction\} \$\{index === points\.length - 1 \? "latest"/);
 
-  assert.match(db, /CREATE TABLE IF NOT EXISTS dashboard_cache/);
-  assert.match(db, /ON CONFLICT\(cache_key\) DO UPDATE/);
-  assert.match(layout, /og-real\.png/);
-  await access(new URL("public/og-real.png", root));
+  assert.match(liveRoute, /\/api\/v1\/quotes\/batch/);
+  assert.match(liveRoute, /sourceCadenceSeconds:\s*180/);
+  assert.match(liveRoute, /FROM index_price/);
+  assert.match(intradayRoute, /time_frame=1min/);
+  assert.match(intradayRoute, /price_volume_intraday/);
+  assert.match(signalsRoute, /\/api\/v1\/signals/);
+  assert.doesNotMatch(signalsRoute, /signal_list/);
+
+  assert.match(gateway, /process\.env\.DRILLR_API_KEY/);
+  assert.match(gateway, /Authorization:/);
+  assert.match(gateway, /Bearer/);
+  assert.match(gateway, /cache:\s*"no-store"/);
+  assert.match(gateway, /DRILLR_DAILY_REQUEST_LIMIT/);
+  assert.match(gateway, /getGatewayCircuit/);
+  assert.match(gateway, /recordGatewayFailure/);
+  assert.match(protection, /enforcePublicRateLimit/);
+  assert.match(protection, /withSharedApiCache/);
+  assert.match(protection, /coalesceRequest/);
+  assert.match(database, /api_response_cache/);
+  assert.match(database, /api_rate_limits/);
+  for (const route of [liveRoute, intradayRoute, signalsRoute]) {
+    assert.match(route, /enforcePublicRateLimit/);
+    assert.match(route, /withSharedApiCache/);
+    assert.doesNotMatch(route, /detail:/);
+  }
+  assert.match(dashboardRoute, /getDashboardCache/);
+  assert.match(dashboardRoute, /putDashboardCache/);
+  assert.match(dashboardRoute, /roic_ttm/);
+  assert.match(dashboardRoute, /price_return_10y/);
+  assert.match(dashboardRoute, /latest_revenue_surprise/);
+  assert.match(dashboardRoute, /dashboard-v7-dense/);
 });
 
-test("ships with sanitized open-source project metadata", async () => {
-  const [packageText, readme, envExample, gitignore, viteConfig] = await Promise.all([
+test("keeps local secrets ignored and publishes the practical product metadata", async () => {
+  const [packageText, readme, envExample, gitignore, layout, notice, deployment] = await Promise.all([
     readFile(new URL("package.json", root), "utf8"),
     readFile(new URL("README.md", root), "utf8"),
     readFile(new URL(".env.example", root), "utf8"),
     readFile(new URL(".gitignore", root), "utf8"),
-    readFile(new URL("vite.config.ts", root), "utf8"),
+    readFile(new URL("app/layout.tsx", root), "utf8"),
+    readFile(new URL("NOTICE.md", root), "utf8"),
+    readFile(new URL("DEPLOYMENT.md", root), "utf8"),
   ]);
   const packageJson = JSON.parse(packageText);
 
@@ -82,7 +128,12 @@ test("ships with sanitized open-source project metadata", async () => {
   assert.equal(packageJson.license, "MIT");
   assert.match(readme, /DRILLR_API_KEY/);
   assert.match(envExample, /^DRILLR_API_KEY=/m);
-  assert.match(gitignore, /!\.env\.example/);
-  assert.doesNotMatch(viteConfig, /\.openai\/hosting\.json|project_id/);
+  assert.match(envExample, /^TRUSTED_IDENTITY_MODE=disabled$/m);
+  assert.match(envExample, /^DRILLR_DAILY_REQUEST_LIMIT=/m);
+  assert.match(gitignore, /\.env\*/);
+  assert.match(layout, /实时自选股驾驶舱/);
+  assert.match(notice, /market data/i);
+  assert.match(deployment, /HMAC mode/);
   await access(new URL("LICENSE", root));
+  await access(new URL("public/og-real.png", root));
 });

@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose a focused product, data, or contributor improvement.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What decision or workflow is currently difficult?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the smallest useful outcome, including any data requirements.
+    validations:
+      required: true
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints
+      options:
+        - label: This proposal does not require mock data in a production path.
+          required: true
+        - label: I have considered the fixed single-screen desktop constraint.
+          required: true

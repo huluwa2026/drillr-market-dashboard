@@ -29,6 +29,46 @@ const CREATE_CACHE_INDEX = `
   ON dashboard_cache (updated_at)
 `;
 
+const CREATE_API_RESPONSE_CACHE_TABLE = `
+  CREATE TABLE IF NOT EXISTS api_response_cache (
+    cache_key TEXT PRIMARY KEY NOT NULL,
+    payload TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  )
+`;
+
+const CREATE_API_RESPONSE_CACHE_INDEX = `
+  CREATE INDEX IF NOT EXISTS api_response_cache_expiry_idx
+  ON api_response_cache (expires_at)
+`;
+
+const CREATE_API_RATE_LIMIT_TABLE = `
+  CREATE TABLE IF NOT EXISTS api_rate_limits (
+    bucket_key TEXT PRIMARY KEY NOT NULL,
+    window_start INTEGER NOT NULL,
+    request_count INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )
+`;
+
+const CREATE_GATEWAY_USAGE_TABLE = `
+  CREATE TABLE IF NOT EXISTS gateway_daily_usage (
+    day_key TEXT PRIMARY KEY NOT NULL,
+    request_count INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )
+`;
+
+const CREATE_GATEWAY_CIRCUIT_TABLE = `
+  CREATE TABLE IF NOT EXISTS gateway_circuit (
+    state_key TEXT PRIMARY KEY NOT NULL,
+    consecutive_failures INTEGER NOT NULL,
+    open_until INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )
+`;
+
 const DEFAULT_STOCKS = [
   ["NVDA", "英伟达", "NASDAQ", 10],
   ["GOOGL", "谷歌", "NASDAQ", 20],
@@ -55,6 +95,11 @@ export async function ensureDashboardSchema() {
     db.prepare(CREATE_SORT_INDEX),
     db.prepare(CREATE_CACHE_TABLE),
     db.prepare(CREATE_CACHE_INDEX),
+    db.prepare(CREATE_API_RESPONSE_CACHE_TABLE),
+    db.prepare(CREATE_API_RESPONSE_CACHE_INDEX),
+    db.prepare(CREATE_API_RATE_LIMIT_TABLE),
+    db.prepare(CREATE_GATEWAY_USAGE_TABLE),
+    db.prepare(CREATE_GATEWAY_CIRCUIT_TABLE),
   ]);
   await db.batch(
     DEFAULT_STOCKS.map(([ticker, name, market, sortOrder]) =>
@@ -138,4 +183,130 @@ export async function putDashboardCache(cacheKey: string, payload: string) {
     .prepare("DELETE FROM dashboard_cache WHERE updated_at < ?")
     .bind(Date.now() - 7 * 24 * 60 * 60 * 1000)
     .run();
+}
+
+export async function getApiResponseCache(cacheKey: string) {
+  await ensureDashboardSchema();
+  return getD1()
+    .prepare(
+      "SELECT payload, updated_at AS updatedAt, expires_at AS expiresAt FROM api_response_cache WHERE cache_key = ?",
+    )
+    .bind(cacheKey)
+    .first<{ payload: string; updatedAt: number; expiresAt: number }>();
+}
+
+export async function putApiResponseCache(
+  cacheKey: string,
+  payload: string,
+  expiresAt: number,
+) {
+  await ensureDashboardSchema();
+  const now = Date.now();
+  await getD1()
+    .prepare(
+      `INSERT INTO api_response_cache (cache_key, payload, updated_at, expires_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(cache_key) DO UPDATE
+       SET payload = excluded.payload,
+           updated_at = excluded.updated_at,
+           expires_at = excluded.expires_at`,
+    )
+    .bind(cacheKey, payload, now, expiresAt)
+    .run();
+  await getD1()
+    .prepare("DELETE FROM api_response_cache WHERE expires_at < ?")
+    .bind(now - 24 * 60 * 60 * 1000)
+    .run();
+}
+
+export async function incrementApiRateLimit(
+  bucketKey: string,
+  windowStart: number,
+) {
+  await ensureDashboardSchema();
+  const now = Date.now();
+  const result = await getD1()
+    .prepare(
+      `INSERT INTO api_rate_limits (bucket_key, window_start, request_count, updated_at)
+       VALUES (?, ?, 1, ?)
+       ON CONFLICT(bucket_key) DO UPDATE SET
+         window_start = excluded.window_start,
+         request_count = CASE
+           WHEN api_rate_limits.window_start = excluded.window_start
+           THEN api_rate_limits.request_count + 1
+           ELSE 1
+         END,
+         updated_at = excluded.updated_at
+       RETURNING request_count AS requestCount`,
+    )
+    .bind(bucketKey, windowStart, now)
+    .first<{ requestCount: number }>();
+  await getD1()
+    .prepare("DELETE FROM api_rate_limits WHERE updated_at < ?")
+    .bind(now - 24 * 60 * 60 * 1000)
+    .run();
+  return result?.requestCount ?? 1;
+}
+
+export async function takeGatewayDailyRequest(dayKey: string) {
+  await ensureDashboardSchema();
+  const result = await getD1()
+    .prepare(
+      `INSERT INTO gateway_daily_usage (day_key, request_count, updated_at)
+       VALUES (?, 1, ?)
+       ON CONFLICT(day_key) DO UPDATE SET
+         request_count = gateway_daily_usage.request_count + 1,
+         updated_at = excluded.updated_at
+       RETURNING request_count AS requestCount`,
+    )
+    .bind(dayKey, Date.now())
+    .first<{ requestCount: number }>();
+  return result?.requestCount ?? 1;
+}
+
+export async function getGatewayCircuit() {
+  await ensureDashboardSchema();
+  return getD1()
+    .prepare(
+      "SELECT consecutive_failures AS consecutiveFailures, open_until AS openUntil FROM gateway_circuit WHERE state_key = 'drillr'",
+    )
+    .first<{ consecutiveFailures: number; openUntil: number }>();
+}
+
+export async function recordGatewaySuccess() {
+  await ensureDashboardSchema();
+  await getD1()
+    .prepare(
+      `INSERT INTO gateway_circuit (state_key, consecutive_failures, open_until, updated_at)
+       VALUES ('drillr', 0, 0, ?)
+       ON CONFLICT(state_key) DO UPDATE SET
+         consecutive_failures = 0,
+         open_until = 0,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(Date.now())
+    .run();
+}
+
+export async function recordGatewayFailure(
+  failureThreshold: number,
+  cooldownMs: number,
+) {
+  await ensureDashboardSchema();
+  const now = Date.now();
+  return getD1()
+    .prepare(
+      `INSERT INTO gateway_circuit (state_key, consecutive_failures, open_until, updated_at)
+       VALUES ('drillr', 1, CASE WHEN ? <= 1 THEN ? ELSE 0 END, ?)
+       ON CONFLICT(state_key) DO UPDATE SET
+         consecutive_failures = gateway_circuit.consecutive_failures + 1,
+         open_until = CASE
+           WHEN gateway_circuit.consecutive_failures + 1 >= ? THEN ?
+           ELSE gateway_circuit.open_until
+         END,
+         updated_at = excluded.updated_at
+       RETURNING consecutive_failures AS consecutiveFailures, open_until AS openUntil`,
+    )
+    .bind(failureThreshold, now + cooldownMs, now, failureThreshold, now + cooldownMs)
+    .first<{ consecutiveFailures: number; openUntil: number }>();
 }
