@@ -17,8 +17,11 @@ function positiveInteger(value: string | undefined, fallback: number) {
 }
 
 function clientAddress(request: Request) {
+  const forwarded =
+    request.headers.get("x-vercel-forwarded-for") ??
+    request.headers.get("x-forwarded-for");
   return (
-    request.headers.get("cf-connecting-ip") ??
+    forwarded?.split(",")[0]?.trim() ??
     request.headers.get("x-real-ip") ??
     (process.env.NODE_ENV === "production" ? "unknown" : "local")
   );

@@ -1,80 +1,15 @@
-import { env } from "cloudflare:workers";
-
-const CREATE_STOCKS_TABLE = `
-  CREATE TABLE IF NOT EXISTS dashboard_stocks (
-    ticker TEXT PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL,
-    market TEXT NOT NULL DEFAULT 'NASDAQ',
-    sort_order INTEGER NOT NULL DEFAULT 100,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )
-`;
-
-const CREATE_SORT_INDEX = `
-  CREATE INDEX IF NOT EXISTS dashboard_stocks_sort_idx
-  ON dashboard_stocks (sort_order, ticker)
-`;
-
-const CREATE_CACHE_TABLE = `
-  CREATE TABLE IF NOT EXISTS dashboard_cache (
-    cache_key TEXT PRIMARY KEY NOT NULL,
-    payload TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
-  )
-`;
-
-const CREATE_CACHE_INDEX = `
-  CREATE INDEX IF NOT EXISTS dashboard_cache_updated_idx
-  ON dashboard_cache (updated_at)
-`;
-
-const CREATE_API_RESPONSE_CACHE_TABLE = `
-  CREATE TABLE IF NOT EXISTS api_response_cache (
-    cache_key TEXT PRIMARY KEY NOT NULL,
-    payload TEXT NOT NULL,
-    updated_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL
-  )
-`;
-
-const CREATE_API_RESPONSE_CACHE_INDEX = `
-  CREATE INDEX IF NOT EXISTS api_response_cache_expiry_idx
-  ON api_response_cache (expires_at)
-`;
-
-const CREATE_API_RATE_LIMIT_TABLE = `
-  CREATE TABLE IF NOT EXISTS api_rate_limits (
-    bucket_key TEXT PRIMARY KEY NOT NULL,
-    window_start INTEGER NOT NULL,
-    request_count INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )
-`;
-
-const CREATE_GATEWAY_USAGE_TABLE = `
-  CREATE TABLE IF NOT EXISTS gateway_daily_usage (
-    day_key TEXT PRIMARY KEY NOT NULL,
-    request_count INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )
-`;
-
-const CREATE_GATEWAY_CIRCUIT_TABLE = `
-  CREATE TABLE IF NOT EXISTS gateway_circuit (
-    state_key TEXT PRIMARY KEY NOT NULL,
-    consecutive_failures INTEGER NOT NULL,
-    open_until INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )
-`;
+import { Redis } from "@upstash/redis";
 
 const DEFAULT_STOCKS = [
-  ["NVDA", "英伟达", "NASDAQ", 10],
-  ["GOOGL", "谷歌", "NASDAQ", 20],
-  ["TSLA", "特斯拉", "NASDAQ", 30],
-  ["AAPL", "苹果", "NASDAQ", 40],
+  { ticker: "NVDA", name: "英伟达", market: "NASDAQ", sortOrder: 10 },
+  { ticker: "GOOGL", name: "谷歌", market: "NASDAQ", sortOrder: 20 },
+  { ticker: "TSLA", name: "特斯拉", market: "NASDAQ", sortOrder: 30 },
+  { ticker: "AAPL", name: "苹果", market: "NASDAQ", sortOrder: 40 },
 ] as const;
+
+const KEY_PREFIX = process.env.REDIS_KEY_PREFIX ?? "drillr-market-dashboard:v1";
+const WATCHLIST_KEY = `${KEY_PREFIX}:watchlist`;
+const CIRCUIT_KEY = `${KEY_PREFIX}:gateway-circuit`;
 
 export type DashboardStock = {
   ticker: string;
@@ -83,230 +18,209 @@ export type DashboardStock = {
   sortOrder: number;
 };
 
-function getD1() {
-  if (!env.DB) throw new Error("D1 binding DB is unavailable");
-  return env.DB;
+type DashboardCacheEntry = { payload: string; updatedAt: number };
+type ApiCacheEntry = DashboardCacheEntry & { expiresAt: number };
+type RateLimitEntry = { windowStart: number; requestCount: number; updatedAt: number };
+type CircuitEntry = { consecutiveFailures: number; openUntil: number; updatedAt: number };
+type LocalStore = {
+  stocks: DashboardStock[];
+  dashboardCache: Map<string, DashboardCacheEntry>;
+  apiCache: Map<string, ApiCacheEntry>;
+  rateLimits: Map<string, RateLimitEntry>;
+  dailyUsage: Map<string, number>;
+  circuit: CircuitEntry;
+};
+
+declare global {
+  var __drillrLocalStore__: LocalStore | undefined;
+}
+
+let sharedRedis: Redis | null | undefined;
+
+function key(scope: string, identifier: string) {
+  return `${KEY_PREFIX}:${scope}:${identifier}`;
+}
+
+function redisClient() {
+  if (sharedRedis !== undefined) return sharedRedis;
+  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  if (url && token) {
+    sharedRedis = new Redis({ url, token });
+    return sharedRedis;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Upstash Redis credentials are required in production (UPSTASH_REDIS_REST_URL/TOKEN or KV_REST_API_URL/TOKEN)",
+    );
+  }
+  sharedRedis = null;
+  return sharedRedis;
+}
+
+function localStore() {
+  globalThis.__drillrLocalStore__ ??= {
+    stocks: DEFAULT_STOCKS.map((stock) => ({ ...stock })),
+    dashboardCache: new Map(),
+    apiCache: new Map(),
+    rateLimits: new Map(),
+    dailyUsage: new Map(),
+    circuit: { consecutiveFailures: 0, openUntil: 0, updatedAt: 0 },
+  };
+  return globalThis.__drillrLocalStore__;
+}
+
+function sortStocks(stocks: DashboardStock[]) {
+  return [...stocks].sort((a, b) => a.sortOrder - b.sortOrder || a.ticker.localeCompare(b.ticker));
+}
+
+async function redisStocks(redis: Redis) {
+  const existing = await redis.get<DashboardStock[]>(WATCHLIST_KEY);
+  if (existing?.length) return sortStocks(existing);
+  await redis.set(WATCHLIST_KEY, DEFAULT_STOCKS, { nx: true });
+  return sortStocks((await redis.get<DashboardStock[]>(WATCHLIST_KEY)) ?? DEFAULT_STOCKS.map((stock) => ({ ...stock })));
 }
 
 export async function ensureDashboardSchema() {
-  const db = getD1();
-  await db.batch([
-    db.prepare(CREATE_STOCKS_TABLE),
-    db.prepare(CREATE_SORT_INDEX),
-    db.prepare(CREATE_CACHE_TABLE),
-    db.prepare(CREATE_CACHE_INDEX),
-    db.prepare(CREATE_API_RESPONSE_CACHE_TABLE),
-    db.prepare(CREATE_API_RESPONSE_CACHE_INDEX),
-    db.prepare(CREATE_API_RATE_LIMIT_TABLE),
-    db.prepare(CREATE_GATEWAY_USAGE_TABLE),
-    db.prepare(CREATE_GATEWAY_CIRCUIT_TABLE),
-  ]);
-  await db.batch(
-    DEFAULT_STOCKS.map(([ticker, name, market, sortOrder]) =>
-      db
-        .prepare(
-          "INSERT OR IGNORE INTO dashboard_stocks (ticker, name, market, sort_order) VALUES (?, ?, ?, ?)",
-        )
-        .bind(ticker, name, market, sortOrder),
-    ),
-  );
+  const redis = redisClient();
+  if (redis) await redisStocks(redis);
+  else localStore();
 }
 
 export async function listDashboardStocks(): Promise<DashboardStock[]> {
-  await ensureDashboardSchema();
-  const result = await getD1()
-    .prepare(
-      "SELECT ticker, name, market, sort_order AS sortOrder FROM dashboard_stocks ORDER BY sort_order ASC, ticker ASC",
-    )
-    .all<DashboardStock>();
-  return result.results;
+  const redis = redisClient();
+  if (redis) return redisStocks(redis);
+  return sortStocks(localStore().stocks).map((stock) => ({ ...stock }));
 }
 
 export async function upsertDashboardStock(ticker: string, name: string) {
-  await ensureDashboardSchema();
-  const existing = await getD1()
-    .prepare("SELECT ticker FROM dashboard_stocks WHERE ticker = ?")
-    .bind(ticker)
-    .first<{ ticker: string }>();
-  const count = await getD1()
-    .prepare("SELECT COUNT(*) AS value FROM dashboard_stocks")
-    .first<{ value: number }>();
-  if (!existing && (count?.value ?? 0) >= 6) {
-    throw new Error("At most six stocks are allowed");
-  }
-  const max = await getD1()
-    .prepare("SELECT COALESCE(MAX(sort_order), 0) AS value FROM dashboard_stocks")
-    .first<{ value: number }>();
-  await getD1()
-    .prepare(
-      `INSERT INTO dashboard_stocks (ticker, name, market, sort_order)
-       VALUES (?, ?, 'NASDAQ', ?)
-       ON CONFLICT(ticker) DO UPDATE SET name = excluded.name, updated_at = CURRENT_TIMESTAMP`,
-    )
-    .bind(ticker, name, (max?.value ?? 0) + 10)
-    .run();
-  return listDashboardStocks();
+  const redis = redisClient();
+  const stocks = redis ? await redisStocks(redis) : localStore().stocks;
+  const existing = stocks.find((stock) => stock.ticker === ticker);
+  if (!existing && stocks.length >= 6) throw new Error("At most six stocks are allowed");
+
+  const next = existing
+    ? stocks.map((stock) => stock.ticker === ticker ? { ...stock, name } : stock)
+    : [...stocks, { ticker, name, market: "NASDAQ", sortOrder: Math.max(0, ...stocks.map((stock) => stock.sortOrder)) + 10 }];
+  const sorted = sortStocks(next);
+  if (redis) await redis.set(WATCHLIST_KEY, sorted);
+  else localStore().stocks = sorted;
+  return sorted;
 }
 
 export async function deleteDashboardStock(ticker: string) {
-  await ensureDashboardSchema();
-  const count = await getD1()
-    .prepare("SELECT COUNT(*) AS value FROM dashboard_stocks")
-    .first<{ value: number }>();
-  if ((count?.value ?? 0) <= 1) throw new Error("At least one stock is required");
-  await getD1().prepare("DELETE FROM dashboard_stocks WHERE ticker = ?").bind(ticker).run();
-  return listDashboardStocks();
+  const redis = redisClient();
+  const stocks = redis ? await redisStocks(redis) : localStore().stocks;
+  if (stocks.length <= 1) throw new Error("At least one stock is required");
+  const next = stocks.filter((stock) => stock.ticker !== ticker);
+  if (redis) await redis.set(WATCHLIST_KEY, next);
+  else localStore().stocks = next;
+  return sortStocks(next);
 }
 
 export async function getDashboardCache(cacheKey: string) {
-  await ensureDashboardSchema();
-  return getD1()
-    .prepare(
-      "SELECT payload, updated_at AS updatedAt FROM dashboard_cache WHERE cache_key = ?",
-    )
-    .bind(cacheKey)
-    .first<{ payload: string; updatedAt: number }>();
+  const redis = redisClient();
+  if (redis) return redis.get<DashboardCacheEntry>(key("dashboard-cache", cacheKey));
+  return localStore().dashboardCache.get(cacheKey) ?? null;
 }
 
 export async function putDashboardCache(cacheKey: string, payload: string) {
-  await ensureDashboardSchema();
-  await getD1()
-    .prepare(
-      `INSERT INTO dashboard_cache (cache_key, payload, updated_at)
-       VALUES (?, ?, ?)
-       ON CONFLICT(cache_key) DO UPDATE
-       SET payload = excluded.payload, updated_at = excluded.updated_at`,
-    )
-    .bind(cacheKey, payload, Date.now())
-    .run();
-  await getD1()
-    .prepare("DELETE FROM dashboard_cache WHERE updated_at < ?")
-    .bind(Date.now() - 7 * 24 * 60 * 60 * 1000)
-    .run();
+  const entry = { payload, updatedAt: Date.now() };
+  const redis = redisClient();
+  if (redis) await redis.set(key("dashboard-cache", cacheKey), entry, { ex: 7 * 24 * 60 * 60 });
+  else localStore().dashboardCache.set(cacheKey, entry);
 }
 
 export async function getApiResponseCache(cacheKey: string) {
-  await ensureDashboardSchema();
-  return getD1()
-    .prepare(
-      "SELECT payload, updated_at AS updatedAt, expires_at AS expiresAt FROM api_response_cache WHERE cache_key = ?",
-    )
-    .bind(cacheKey)
-    .first<{ payload: string; updatedAt: number; expiresAt: number }>();
+  const redis = redisClient();
+  if (redis) return redis.get<ApiCacheEntry>(key("api-cache", cacheKey));
+  const entry = localStore().apiCache.get(cacheKey);
+  if (!entry || Date.now() - entry.expiresAt > 24 * 60 * 60 * 1000) {
+    localStore().apiCache.delete(cacheKey);
+    return null;
+  }
+  return entry;
 }
 
-export async function putApiResponseCache(
-  cacheKey: string,
-  payload: string,
-  expiresAt: number,
-) {
-  await ensureDashboardSchema();
+export async function putApiResponseCache(cacheKey: string, payload: string, expiresAt: number) {
   const now = Date.now();
-  await getD1()
-    .prepare(
-      `INSERT INTO api_response_cache (cache_key, payload, updated_at, expires_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(cache_key) DO UPDATE
-       SET payload = excluded.payload,
-           updated_at = excluded.updated_at,
-           expires_at = excluded.expires_at`,
-    )
-    .bind(cacheKey, payload, now, expiresAt)
-    .run();
-  await getD1()
-    .prepare("DELETE FROM api_response_cache WHERE expires_at < ?")
-    .bind(now - 24 * 60 * 60 * 1000)
-    .run();
+  const entry = { payload, updatedAt: now, expiresAt };
+  const redis = redisClient();
+  if (redis) await redis.set(key("api-cache", cacheKey), entry, { px: Math.max(1, expiresAt - now + 24 * 60 * 60 * 1000) });
+  else localStore().apiCache.set(cacheKey, entry);
 }
 
-export async function incrementApiRateLimit(
-  bucketKey: string,
-  windowStart: number,
-) {
-  await ensureDashboardSchema();
+export async function incrementApiRateLimit(bucketKey: string, windowStart: number) {
+  const redis = redisClient();
+  if (redis) {
+    const redisKey = key("rate", `${bucketKey}:${windowStart}`);
+    const count = await redis.incr(redisKey);
+    if (count === 1) await redis.expire(redisKey, 120);
+    return count;
+  }
+
+  const store = localStore();
   const now = Date.now();
-  const result = await getD1()
-    .prepare(
-      `INSERT INTO api_rate_limits (bucket_key, window_start, request_count, updated_at)
-       VALUES (?, ?, 1, ?)
-       ON CONFLICT(bucket_key) DO UPDATE SET
-         window_start = excluded.window_start,
-         request_count = CASE
-           WHEN api_rate_limits.window_start = excluded.window_start
-           THEN api_rate_limits.request_count + 1
-           ELSE 1
-         END,
-         updated_at = excluded.updated_at
-       RETURNING request_count AS requestCount`,
-    )
-    .bind(bucketKey, windowStart, now)
-    .first<{ requestCount: number }>();
-  await getD1()
-    .prepare("DELETE FROM api_rate_limits WHERE updated_at < ?")
-    .bind(now - 24 * 60 * 60 * 1000)
-    .run();
-  return result?.requestCount ?? 1;
+  const existing = store.rateLimits.get(bucketKey);
+  const entry = existing?.windowStart === windowStart
+    ? { windowStart, requestCount: existing.requestCount + 1, updatedAt: now }
+    : { windowStart, requestCount: 1, updatedAt: now };
+  store.rateLimits.set(bucketKey, entry);
+  for (const [entryKey, value] of store.rateLimits) {
+    if (value.updatedAt < now - 24 * 60 * 60 * 1000) store.rateLimits.delete(entryKey);
+  }
+  return entry.requestCount;
 }
 
 export async function takeGatewayDailyRequest(dayKey: string) {
-  await ensureDashboardSchema();
-  const result = await getD1()
-    .prepare(
-      `INSERT INTO gateway_daily_usage (day_key, request_count, updated_at)
-       VALUES (?, 1, ?)
-       ON CONFLICT(day_key) DO UPDATE SET
-         request_count = gateway_daily_usage.request_count + 1,
-         updated_at = excluded.updated_at
-       RETURNING request_count AS requestCount`,
-    )
-    .bind(dayKey, Date.now())
-    .first<{ requestCount: number }>();
-  return result?.requestCount ?? 1;
+  const redis = redisClient();
+  if (redis) {
+    const redisKey = key("gateway-usage", dayKey);
+    const count = await redis.incr(redisKey);
+    if (count === 1) await redis.expire(redisKey, 3 * 24 * 60 * 60);
+    return count;
+  }
+  const store = localStore();
+  const count = (store.dailyUsage.get(dayKey) ?? 0) + 1;
+  store.dailyUsage.set(dayKey, count);
+  return count;
 }
 
 export async function getGatewayCircuit() {
-  await ensureDashboardSchema();
-  return getD1()
-    .prepare(
-      "SELECT consecutive_failures AS consecutiveFailures, open_until AS openUntil FROM gateway_circuit WHERE state_key = 'drillr'",
-    )
-    .first<{ consecutiveFailures: number; openUntil: number }>();
+  const redis = redisClient();
+  if (redis) {
+    const entry = await redis.hgetall<Record<string, number | string>>(CIRCUIT_KEY);
+    if (!entry || Object.keys(entry).length === 0) return null;
+    return {
+      consecutiveFailures: Number(entry.consecutiveFailures ?? 0),
+      openUntil: Number(entry.openUntil ?? 0),
+    };
+  }
+  const { consecutiveFailures, openUntil } = localStore().circuit;
+  return { consecutiveFailures, openUntil };
 }
 
 export async function recordGatewaySuccess() {
-  await ensureDashboardSchema();
-  await getD1()
-    .prepare(
-      `INSERT INTO gateway_circuit (state_key, consecutive_failures, open_until, updated_at)
-       VALUES ('drillr', 0, 0, ?)
-       ON CONFLICT(state_key) DO UPDATE SET
-         consecutive_failures = 0,
-         open_until = 0,
-         updated_at = excluded.updated_at`,
-    )
-    .bind(Date.now())
-    .run();
+  const entry = { consecutiveFailures: 0, openUntil: 0, updatedAt: Date.now() };
+  const redis = redisClient();
+  if (redis) await redis.hset(CIRCUIT_KEY, entry);
+  else localStore().circuit = entry;
 }
 
-export async function recordGatewayFailure(
-  failureThreshold: number,
-  cooldownMs: number,
-) {
-  await ensureDashboardSchema();
+export async function recordGatewayFailure(failureThreshold: number, cooldownMs: number) {
   const now = Date.now();
-  return getD1()
-    .prepare(
-      `INSERT INTO gateway_circuit (state_key, consecutive_failures, open_until, updated_at)
-       VALUES ('drillr', 1, CASE WHEN ? <= 1 THEN ? ELSE 0 END, ?)
-       ON CONFLICT(state_key) DO UPDATE SET
-         consecutive_failures = gateway_circuit.consecutive_failures + 1,
-         open_until = CASE
-           WHEN gateway_circuit.consecutive_failures + 1 >= ? THEN ?
-           ELSE gateway_circuit.open_until
-         END,
-         updated_at = excluded.updated_at
-       RETURNING consecutive_failures AS consecutiveFailures, open_until AS openUntil`,
-    )
-    .bind(failureThreshold, now + cooldownMs, now, failureThreshold, now + cooldownMs)
-    .first<{ consecutiveFailures: number; openUntil: number }>();
+  const redis = redisClient();
+  if (redis) {
+    const consecutiveFailures = await redis.hincrby(CIRCUIT_KEY, "consecutiveFailures", 1);
+    const current = await redis.hget<number>(CIRCUIT_KEY, "openUntil") ?? 0;
+    const openUntil = consecutiveFailures >= failureThreshold ? now + cooldownMs : Number(current);
+    await redis.hset(CIRCUIT_KEY, { openUntil, updatedAt: now });
+    return { consecutiveFailures, openUntil };
+  }
+
+  const previous = localStore().circuit;
+  const consecutiveFailures = previous.consecutiveFailures + 1;
+  const openUntil = consecutiveFailures >= failureThreshold ? now + cooldownMs : previous.openUntil;
+  localStore().circuit = { consecutiveFailures, openUntil, updatedAt: now };
+  return { consecutiveFailures, openUntil };
 }

@@ -22,7 +22,7 @@ Production code never substitutes invented market data.
 - Seven chart-led panels for valuation, economic quality, growth, returns, trend, expectations, and balance-sheet/payout signals.
 - More than 200 visible data marks in focus mode, plus radar coverage for Drillr's structured fields and alternative-data catalog.
 - Quotes checked every 30 seconds and intraday bars/signals refreshed every 60 seconds, with the source cadence shown honestly in the UI.
-- Cloudflare D1-backed watchlist configuration, shared API caching, rate limiting, a daily gateway budget, and circuit breaking.
+- Upstash Redis-backed watchlist configuration, shared API caching, rate limiting, a daily gateway budget, and circuit breaking in production.
 - Fixed single-screen desktop layout with responsive tablet and mobile flows.
 - Built-in English and Simplified Chinese UI, selected by browser preference,
   remembered locally, or set explicitly with `?lang=en` / `?lang=zh`.
@@ -37,9 +37,9 @@ flowchart LR
     Browser --> Core[Cached company core API]
     Live & Intraday & Signals & Core --> Guard[Rate limit + cache + quota + circuit]
     Guard --> Gateway[Drillr Gateway]
-    Guard --> D1[(Cloudflare D1)]
+    Guard --> Redis[(Upstash Redis)]
     Gateway --> Markets[Market and alternative data]
-    D1 --> Universe[Stock universe and cache]
+    Redis --> Universe[Stock universe and cache]
 ```
 
 The Drillr API key remains server-side. Browser code only talks to this
@@ -66,9 +66,10 @@ Set `DRILLR_API_KEY` in `.env.local`, then open
 [`?lang=zh`](http://localhost:3000/?lang=zh) for Simplified Chinese; the header
 switch changes and remembers the preference without reloading the dashboard.
 
-The local Cloudflare runtime creates the D1 tables automatically. With
-`ALLOW_LOCAL_ADMIN=true`, the stock-management drawer is writable during local
-development. This switch is ignored in production.
+Local development uses an in-memory store, so no database setup is required.
+With `ALLOW_LOCAL_ADMIN=true`, the stock-management drawer is writable during
+local development. This switch is ignored in production. Production deployments
+must configure Upstash Redis.
 
 ## Environment variables
 
@@ -76,11 +77,16 @@ development. This switch is ignored in production.
 | --- | --- | --- |
 | `DRILLR_API_KEY` | Yes | Server-side Drillr Gateway credential. |
 | `DRILLR_GATEWAY_URL` | No | Gateway endpoint; defaults to `https://gateway.drillr.ai`. |
+| `UPSTASH_REDIS_REST_URL` | Production | Upstash Redis REST endpoint, normally injected by the Vercel Marketplace integration. |
+| `UPSTASH_REDIS_REST_TOKEN` | Production | Server-side Upstash Redis REST token. |
+| `KV_REST_API_URL` | Alternative | Compatible Vercel Marketplace alias for the Upstash REST endpoint. |
+| `KV_REST_API_TOKEN` | Alternative | Compatible Vercel Marketplace alias for the Upstash REST token. |
+| `REDIS_KEY_PREFIX` | No | Redis namespace; defaults to `drillr-market-dashboard:v1`. |
 | `PUBLIC_API_RATE_LIMIT_PER_MINUTE` | No | Per-client public API limit; defaults by route. |
 | `DRILLR_DAILY_REQUEST_LIMIT` | No | Maximum upstream Gateway calls per UTC day; defaults to `10000`. |
 | `DRILLR_CIRCUIT_FAILURE_THRESHOLD` | No | Consecutive failures before opening the circuit; defaults to `5`. |
 | `DRILLR_CIRCUIT_COOLDOWN_SECONDS` | No | Open-circuit cooldown; defaults to `60`. |
-| `RATE_LIMIT_SALT` | Production | Random secret used to hash client addresses stored in D1. |
+| `RATE_LIMIT_SALT` | Production | Random secret used to hash client addresses stored in Redis. |
 | `TRUSTED_IDENTITY_MODE` | No | `disabled` (default), `hmac`, or explicitly trusted `openai-sites`. |
 | `TRUSTED_IDENTITY_HMAC_SECRET` | For `hmac` | At least 32 characters; shared only with the trusted identity proxy. |
 | `ADMIN_EMAILS` | For production writes | Comma-separated production admin allowlist. Empty disables writes. |
@@ -104,8 +110,8 @@ running the end-to-end suite.
 
 ## Public deployment safety
 
-- Live quotes are shared for 20 seconds, intraday bars for 30 seconds, and
-  signals for 45 seconds; the low-frequency core retains its longer cache.
+- Live quotes are shared through Redis for 20 seconds, intraday bars for 30
+  seconds, and signals for 45 seconds; the low-frequency core retains its longer cache.
 - Public routes enforce a per-client rate limit before touching Drillr.
 - Every upstream request consumes a configurable UTC-day budget. Five
   consecutive failures open a default 60-second circuit.

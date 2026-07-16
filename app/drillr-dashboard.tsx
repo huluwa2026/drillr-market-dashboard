@@ -790,7 +790,10 @@ export function DrillrDashboard() {
       const requestLocale = localeRef.current;
       const response = await fetch("/api/live", { cache: "no-store" });
       const payload = (await response.json()) as LivePayload | ApiError;
-      if (!response.ok || !payload.ok) throw new Error(requestLocale === "zh" ? payload.error ?? "实时报价请求失败" : "Unable to load live quotes");
+      if (!response.ok || !payload.ok) {
+        const detail = "error" in payload ? payload.error : undefined;
+        throw new Error(requestLocale === "zh" ? detail ?? "实时报价请求失败" : "Unable to load live quotes");
+      }
       const nextMoves: Record<string, number> = {};
       for (const quote of payload.quotes) {
         const previous = previousQuotes.current[quote.symbol];

@@ -1,37 +1,47 @@
-# Deployment and trust boundaries
+# Vercel deployment and trust boundaries
 
 The repository is safe to publish without publishing a hosted demo. A public
 deployment needs the controls below because every browser request is ultimately
 served with the deployment owner's Drillr API key.
 
-## Required production settings
+## Required production services
 
-1. Store `DRILLR_API_KEY`, `RATE_LIMIT_SALT`, and any identity HMAC secret in the
-   deployment secret store. Never expose them through browser-prefixed variables.
-2. Bind a persistent Cloudflare D1 database as `DB`.
-3. Set an explicit `DRILLR_DAILY_REQUEST_LIMIT` that matches the account budget.
-4. Set `ADMIN_EMAILS` if stock-universe writes should be enabled. An empty value
+1. Import the repository into Vercel as a Next.js project.
+2. Provision Upstash Redis through the Vercel Marketplace and connect it to the
+   project. The app accepts either `UPSTASH_REDIS_REST_URL` plus
+   `UPSTASH_REDIS_REST_TOKEN`, or the Vercel aliases `KV_REST_API_URL` plus
+   `KV_REST_API_TOKEN`.
+3. Store `DRILLR_API_KEY`, `RATE_LIMIT_SALT`, and any identity HMAC secret in
+   Vercel Environment Variables. Never expose them through `NEXT_PUBLIC_`
+   variables.
+4. Set an explicit `DRILLR_DAILY_REQUEST_LIMIT` that matches the account budget.
+5. Set `ADMIN_EMAILS` if stock-universe writes should be enabled. An empty value
    intentionally disables production writes.
-5. Confirm the Drillr plan permits the intended public display of returned data.
+6. Confirm that the Drillr plan permits the intended public display and
+   redistribution of returned market data.
+
+Local development intentionally uses a process-local memory store when Upstash
+credentials are absent. Production refuses to serve database-backed routes
+without Redis, so an accidental ephemeral deployment cannot silently disable
+rate limits or quota tracking.
 
 ## Public API controls
 
-The application stores only a keyed HMAC of a client address for rate limiting;
-raw addresses are not written to D1. Live, intraday, and signal responses use
+The application stores only a keyed HMAC of the Vercel-provided client address;
+raw addresses are not written to Redis. Live, intraday, and signal responses use
 short shared caches. Gateway calls also pass through a UTC-day budget and a
 failure circuit breaker. These controls reduce accidental or opportunistic
-abuse but are not a substitute for Cloudflare WAF rules on a high-traffic demo.
+abuse but are not a substitute for Vercel Firewall rules on a high-traffic demo.
 
 ## Administrator identity modes
 
 `TRUSTED_IDENTITY_MODE=disabled` is the secure default.
 
-### HMAC mode (recommended for portable deployments)
+### HMAC mode
 
 Set `TRUSTED_IDENTITY_MODE=hmac` and a random
-`TRUSTED_IDENTITY_HMAC_SECRET` of at least 32 characters. A trusted edge proxy
-must authenticate the user, remove any client-supplied identity headers, and
-inject:
+`TRUSTED_IDENTITY_HMAC_SECRET` of at least 32 characters. A trusted proxy must
+authenticate the user, remove any client-supplied identity headers, and inject:
 
 - `oai-authenticated-user-email`
 - `oai-authenticated-user-full-name` (optional percent-encoded UTF-8)
@@ -47,18 +57,29 @@ The signed message is exactly:
 
 Signatures older or newer than five minutes are rejected.
 
-### OpenAI Sites mode
+For an initial read-only public deployment, keep identity mode disabled and
+leave `ADMIN_EMAILS` empty. For a private preview, enable Vercel Authentication
+under Deployment Protection before adding the Drillr credential.
 
-`TRUSTED_IDENTITY_MODE=openai-sites` explicitly trusts the OpenAI Sites identity
-headers. Use it only when the application is deployed behind that platform's
-trusted boundary and outside callers cannot inject or preserve headers with the
-same names. Do not use this mode on a generic public Worker route.
+## Deployment commands
+
+After linking the repository and configuring Redis and secrets:
+
+```bash
+vercel          # protected preview deployment
+vercel --prod   # public production deployment
+```
+
+The project uses the standard `next build`; no custom framework preset or
+output directory is required.
 
 ## Pre-launch checks
 
 - Run `npm run lint`, `npm test`, and `npm run test:e2e`.
-- Verify the public origin cannot mutate `/api/stocks` without a valid identity.
+- Verify the preview origin cannot mutate `/api/stocks` without a valid identity.
 - Verify `429` responses appear when the configured rate is exceeded.
-- Verify the D1 database records shared cache and quota state.
-- Enable GitHub dependency alerts, secret scanning, push protection, private
-  vulnerability reporting, and required CI checks before announcing the repo.
+- Verify Redis contains shared cache, rate-limit, quota, and circuit keys.
+- Confirm missing Redis credentials produce a production error rather than an
+  in-memory fallback.
+- Enable GitHub dependency alerts, secret scanning, push protection, and
+  required CI checks before announcing the repository.

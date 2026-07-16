@@ -20,7 +20,7 @@
 - “单股聚焦”使用七个图表化面板呈现估值、盈利质量、成长、收益、趋势、预期、杠杆与股东回报。
 - 单股页提供 200+ 个可见数据标记；雷达页继续体现 Drillr 结构化字段和另类数据目录覆盖。
 - 报价每 30 秒检查、分时与信号每 60 秒刷新；页面明确标注底层数据实际频率。
-- 使用 Cloudflare D1 保存股票池，并提供共享缓存、匿名限流、每日上游额度与连续失败熔断。
+- 生产环境使用 Upstash Redis 保存股票池，并提供共享缓存、匿名限流、每日上游额度与连续失败熔断。
 - 桌面端不滚动；平板和手机端使用自适应流式布局。
 - 内置英文与简体中文界面：可按浏览器语言自动选择、在页面顶部切换并记忆偏好，
   也可以使用 `?lang=en` / `?lang=zh` 明确指定。
@@ -45,9 +45,9 @@ npm run dev
 [http://localhost:3000/?lang=zh](http://localhost:3000/?lang=zh)。英文界面使用
 [`?lang=en`](http://localhost:3000/?lang=en)；页面顶部切换语言时不需要重新加载数据。
 
-本地 Cloudflare 运行环境会自动创建所需 D1 数据表。开发环境设置
+本地开发默认使用内存存储，不需要提前配置数据库。设置
 `ALLOW_LOCAL_ADMIN=true` 后，可以直接使用右上角管理功能；生产环境会忽略该
-本地旁路。
+本地旁路，并强制要求配置 Upstash Redis。
 
 ## 环境变量
 
@@ -55,6 +55,11 @@ npm run dev
 | --- | --- | --- |
 | `DRILLR_API_KEY` | 是 | 仅在服务端使用的 Drillr Gateway 凭证。 |
 | `DRILLR_GATEWAY_URL` | 否 | 网关地址，默认 `https://gateway.drillr.ai`。 |
+| `UPSTASH_REDIS_REST_URL` | 生产环境 | Upstash Redis REST 地址，通常由 Vercel Marketplace 自动注入。 |
+| `UPSTASH_REDIS_REST_TOKEN` | 生产环境 | 仅服务端使用的 Upstash Redis REST Token。 |
+| `KV_REST_API_URL` | 兼容变量 | 部分 Vercel Marketplace 集成使用的 Upstash REST 地址变量名。 |
+| `KV_REST_API_TOKEN` | 兼容变量 | 部分 Vercel Marketplace 集成使用的 Upstash REST Token 变量名。 |
+| `REDIS_KEY_PREFIX` | 否 | Redis 命名空间，默认 `drillr-market-dashboard:v1`。 |
 | `PUBLIC_API_RATE_LIMIT_PER_MINUTE` | 否 | 每个来源每分钟的公开 API 请求上限。 |
 | `DRILLR_DAILY_REQUEST_LIMIT` | 否 | 每个 UTC 日最多调用 Drillr Gateway 的次数，默认 `10000`。 |
 | `DRILLR_CIRCUIT_FAILURE_THRESHOLD` | 否 | 连续失败多少次后熔断，默认 `5`。 |
@@ -81,7 +86,7 @@ npm run build    # 创建生产构建
 
 ## 公开部署安全
 
-- 实时报价、分钟行情和信号会分别使用短周期 D1 共享缓存，避免每个浏览器重复消耗额度。
+- 实时报价、分钟行情和信号会分别使用短周期 Redis 共享缓存，避免每个浏览器重复消耗额度。
 - 公开 API 会先执行匿名来源限流，再访问 Drillr。
 - 每次真实上游请求都会计入每日额度；连续失败默认达到 5 次后熔断 60 秒。
 - 上游异常时可以短暂返回过期缓存，具体错误只进入服务端日志，不返回浏览器。

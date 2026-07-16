@@ -97,8 +97,12 @@ test("refreshes live quotes, intraday bars, and signals through guarded server A
   assert.match(protection, /enforcePublicRateLimit/);
   assert.match(protection, /withSharedApiCache/);
   assert.match(protection, /coalesceRequest/);
-  assert.match(database, /api_response_cache/);
-  assert.match(database, /api_rate_limits/);
+  assert.match(database, /@upstash\/redis/);
+  assert.match(database, /UPSTASH_REDIS_REST_URL/);
+  assert.match(database, /KV_REST_API_URL/);
+  assert.match(database, /redis\.incr/);
+  assert.match(database, /__drillrLocalStore__/);
+  assert.doesNotMatch(database, /cloudflare:workers|D1Database/);
   for (const route of [liveRoute, intradayRoute, signalsRoute]) {
     assert.match(route, /enforcePublicRateLimit/);
     assert.match(route, /withSharedApiCache/);
@@ -129,10 +133,19 @@ test("keeps local secrets ignored and publishes bilingual product metadata", asy
 
   assert.equal(packageJson.name, "drillr-market-dashboard");
   assert.equal(packageJson.license, "MIT");
+  assert.equal(packageJson.scripts.dev, "next dev");
+  assert.equal(packageJson.scripts.build, "next build");
+  assert.equal(packageJson.dependencies["@upstash/redis"], "^1.38.0");
+  assert.equal(packageJson.devDependencies?.vinext, undefined);
+  assert.doesNotMatch(packageText, /cloudflare|wrangler|vinext/i);
   assert.match(readme, /DRILLR_API_KEY/);
   assert.match(envExample, /^DRILLR_API_KEY=/m);
   assert.match(envExample, /^TRUSTED_IDENTITY_MODE=disabled$/m);
   assert.match(envExample, /^DRILLR_DAILY_REQUEST_LIMIT=/m);
+  assert.match(envExample, /^UPSTASH_REDIS_REST_URL=$/m);
+  assert.match(envExample, /^UPSTASH_REDIS_REST_TOKEN=$/m);
+  assert.match(envExample, /^KV_REST_API_URL=$/m);
+  assert.match(envExample, /^KV_REST_API_TOKEN=$/m);
   assert.match(gitignore, /\.env\*/);
   assert.match(readme, /public\/og-en\.png/);
   assert.match(chineseReadme, /public\/og-zh\.png/);
@@ -143,6 +156,7 @@ test("keeps local secrets ignored and publishes bilingual product metadata", asy
   assert.match(component, /drillr-locale/);
   assert.match(component, /data-locale=\{locale\}/);
   assert.match(notice, /market data/i);
+  assert.match(deployment, /Vercel deployment/);
   assert.match(deployment, /HMAC mode/);
   await access(new URL("LICENSE", root));
   await access(new URL("public/og-real.png", root));

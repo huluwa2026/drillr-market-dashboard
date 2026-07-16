@@ -27,7 +27,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: "npm run dev -- --port 4173",
+        command: "ALLOW_LOCAL_ADMIN=true npm run dev -- --port 4173",
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
