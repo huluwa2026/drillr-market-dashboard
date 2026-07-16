@@ -127,7 +127,7 @@ test("refreshes live quotes, intraday bars, and signals through guarded server A
 });
 
 test("keeps local secrets ignored and publishes bilingual product metadata", async () => {
-  const [packageText, readme, chineseReadme, envExample, gitignore, layout, page, component, notice, deployment] = await Promise.all([
+  const [packageText, readme, chineseReadme, envExample, gitignore, layout, page, component, notice, deployment, ci, codeql] = await Promise.all([
     readFile(new URL("package.json", root), "utf8"),
     readFile(new URL("README.md", root), "utf8"),
     readFile(new URL("README.zh-CN.md", root), "utf8"),
@@ -138,6 +138,8 @@ test("keeps local secrets ignored and publishes bilingual product metadata", asy
     readFile(new URL("app/drillr-dashboard.tsx", root), "utf8"),
     readFile(new URL("NOTICE.md", root), "utf8"),
     readFile(new URL("DEPLOYMENT.md", root), "utf8"),
+    readFile(new URL(".github/workflows/ci.yml", root), "utf8"),
+    readFile(new URL(".github/workflows/codeql.yml", root), "utf8"),
   ]);
   const packageJson = JSON.parse(packageText);
 
@@ -145,6 +147,7 @@ test("keeps local secrets ignored and publishes bilingual product metadata", asy
   assert.equal(packageJson.license, "MIT");
   assert.equal(packageJson.scripts.dev, "next dev");
   assert.equal(packageJson.scripts.build, "next build");
+  assert.equal(packageJson.scripts.typecheck, "tsc --noEmit");
   assert.equal(packageJson.dependencies["@upstash/redis"], "^1.38.0");
   assert.equal(packageJson.devDependencies?.vinext, undefined);
   assert.doesNotMatch(packageText, /cloudflare|wrangler|vinext/i);
@@ -163,6 +166,8 @@ test("keeps local secrets ignored and publishes bilingual product metadata", asy
   assert.match(gitignore, /\.env\*/);
   assert.match(readme, /public\/og-en\.png/);
   assert.match(chineseReadme, /public\/og-zh\.png/);
+  assert.match(readme, /actions\/workflows\/ci\.yml\/badge\.svg/);
+  assert.match(chineseReadme, /actions\/workflows\/codeql\.yml\/badge\.svg/);
   assert.match(layout, /Real-time watchlist cockpit/);
   assert.match(layout, /"en-US"/);
   assert.match(layout, /"zh-CN"/);
@@ -173,7 +178,12 @@ test("keeps local secrets ignored and publishes bilingual product metadata", asy
   assert.match(deployment, /Vercel deployment/);
   assert.match(deployment, /Required Vercel Firewall rule/);
   assert.match(deployment, /HMAC mode/);
+  assert.match(ci, /name: Production build/);
+  assert.match(ci, /name: Browser and visual tests/);
+  assert.match(codeql, /languages: javascript-typescript/);
   await access(new URL("LICENSE", root));
+  await access(new URL("CODE_OF_CONDUCT.md", root));
+  await access(new URL("SUPPORT.md", root));
   await access(new URL("public/og-real.png", root));
   await access(new URL("public/og-en.png", root));
   await access(new URL("public/og-zh.png", root));

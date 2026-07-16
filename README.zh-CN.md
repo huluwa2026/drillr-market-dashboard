@@ -1,37 +1,93 @@
-# drillr Market Command
+<div align="center">
+  <img src="./public/favicon.png" width="72" height="72" alt="drillr 标志" />
+  <h1>drillr Market Command</h1>
+  <p><strong>由 Drillr 真实数据驱动、不滚动的高密度实时市场驾驶舱。</strong></p>
 
-[在线体验](https://drillr-market-dashboard.vercel.app/?lang=zh) · [English](./README.md)
+  <p>
+    <a href="https://github.com/huluwa2026/drillr-market-dashboard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/huluwa2026/drillr-market-dashboard/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
+    <a href="https://github.com/huluwa2026/drillr-market-dashboard/actions/workflows/codeql.yml"><img alt="CodeQL" src="https://github.com/huluwa2026/drillr-market-dashboard/actions/workflows/codeql.yml/badge.svg?branch=main" /></a>
+    <a href="https://drillr-market-dashboard.vercel.app/?lang=zh"><img alt="Vercel 在线服务" src="https://img.shields.io/badge/live-Vercel-000000?logo=vercel&logoColor=white" /></a>
+    <a href="./LICENSE"><img alt="MIT 许可证" src="https://img.shields.io/github/license/huluwa2026/drillr-market-dashboard?color=2ea44f" /></a>
+    <img alt="Node.js 22.13+" src="https://img.shields.io/badge/Node.js-%E2%89%A522.13-339933?logo=nodedotjs&logoColor=white" />
+    <img alt="Next.js 16" src="https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white" />
+  </p>
 
-一个由 [Drillr](https://drillr.ai) 真实金融数据驱动、不滚动的高密度实时自选股驾驶舱。
+  <p>
+    <a href="https://drillr-market-dashboard.vercel.app/?lang=zh"><strong>在线体验</strong></a>
+    · <a href="./README.md">English</a>
+    · <a href="./CONTRIBUTING.md">参与贡献</a>
+    · <a href="https://github.com/huluwa2026/drillr-market-dashboard/discussions">交流讨论</a>
+  </p>
+</div>
 
-![drillr Market Dashboard 中文界面](./public/og-zh.png)
+[![drillr Market Dashboard 中文界面](./public/og-zh.png)](https://drillr-market-dashboard.vercel.app/?lang=zh)
 
-桌面端以严格单屏呈现两层工作流：先用“自选雷达”发现哪只股票正在变化，再进入
-“单股聚焦”查看可交互五分钟 K 线、盘前盘后、实时催化剂、同业横截面和七个
-图表化情报面板。平板和手机端会重排为可滚动页面。生产代码不会在真实数据
-不可用时切换到模拟行情。
+## 为什么做这个项目
+
+很多股票大盘要么单屏信息太少，要么把互不相干的数字堆成一个很长的页面。
+drillr Market Command 围绕一个明确的桌面决策流程设计：**先扫描自选股、发现什么
+正在变化，再在不离开单屏的情况下聚焦一只股票。**
+
+生产代码只使用 [Drillr](https://drillr.ai) 金融数据网关的真实数据。真实行情不可用
+时，页面不会偷偷切换成虚构数据。
+
+| 快速了解 | |
+| --- | --- |
+| 两种视图 | 按变化排序的自选雷达 + 单股聚焦 |
+| 行情画面 | 可交互五分钟 K 线、成交量、盘前盘后、催化剂和同业对比 |
+| 情报密度 | 单股页 7 个图表面板、200+ 个可见数据标记 |
+| 刷新频率 | 报价每 30 秒检查，分钟行情和信号每 60 秒刷新 |
+| 页面布局 | 桌面端严格单屏，平板和手机端自适应流式布局 |
+| 国际化 | 英文与简体中文 |
+| 技术栈 | Next.js 16、React 19、Vercel、Upstash Redis |
+
+## 目录
+
+- [核心能力](#核心能力)
+- [系统架构](#系统架构)
+- [本地启动](#本地启动)
+- [配置说明](#配置说明)
+- [质量与测试](#质量与测试)
+- [安全部署](#安全部署)
+- [参与贡献与获取帮助](#参与贡献与获取帮助)
+- [数据与许可证](#数据与许可证)
 
 ## 核心能力
 
-- 只读取 Drillr Gateway 真实数据，不提供模拟数据兜底。
-- 默认关注英伟达、谷歌、特斯拉和苹果，并支持管理 1～6 只自选股。
-- “自选雷达”按变化幅度排序，同时显示价格、多周期收益、估值、动量、盘前盘后、事件数量和目标价空间。
-- 将最新交易日一分钟行情聚合为可交互五分钟 K 线，支持鼠标准星、OHLC、成交量和时间拖动条。
-- “单股聚焦”使用七个图表化面板呈现估值、盈利质量、成长、收益、趋势、预期、杠杆与股东回报。
-- 单股页提供 200+ 个可见数据标记；雷达页继续体现 Drillr 结构化字段和另类数据目录覆盖。
-- 报价每 30 秒检查、分时与信号每 60 秒刷新；页面明确标注底层数据实际频率。
-- 生产环境使用 Vercel WAF 和 Upstash Redis，提供全局/分接口限流、分布式刷新锁、每日上游额度与连续失败熔断。
-- 桌面端不滚动；平板和手机端使用自适应流式布局。
-- 内置英文与简体中文界面：可按浏览器语言自动选择、在页面顶部切换并记忆偏好，
-  也可以使用 `?lang=en` / `?lang=zh` 明确指定。
+- **只用真实数据：**生产环境没有模拟行情兜底。
+- **聚焦型自选池：**支持关注 1～6 只股票，默认包含英伟达、谷歌、特斯拉和苹果。
+- **变化优先的雷达：**一眼对比价格、多周期收益、估值、动量、盘前盘后、事件数量和目标价空间。
+- **可交互行情：**把最新交易日一分钟行情聚合成五分钟 K 线，支持十字光标、OHLC、成交量和拖动条。
+- **图表化基本面：**用图表而不是纯数字方格呈现估值、盈利质量、成长、收益、趋势、预期、杠杆和股东回报。
+- **诚实的数据新鲜度：**界面直接显示刷新时间和底层数据实际频率。
+- **内置国际化：**自动识别浏览器语言、在本地记住选择，也支持 `?lang=en` / `?lang=zh` 固定语言链接。
+- **公开服务防护：**Vercel WAF 配合 Redis 限流、共享缓存、刷新锁、每日预算和连续失败熔断，保护上游 API Key。
 
-## 环境要求
+## 系统架构
+
+```mermaid
+flowchart LR
+    Browser[自选雷达 + 单股聚焦] --> Live[30 秒报价检查]
+    Browser --> Intraday[60 秒分钟行情接口]
+    Browser --> Signals[60 秒信号接口]
+    Browser --> Core[低频公司核心接口]
+    Live & Intraday & Signals & Core --> Guard[限流 + 缓存 + 额度 + 熔断]
+    Guard --> Gateway[Drillr Gateway]
+    Guard --> Redis[(Upstash Redis)]
+    Gateway --> Markets[市场与另类数据]
+    Redis --> Universe[股票池与共享状态]
+```
+
+Drillr API Key 始终留在服务端，浏览器只访问经过防护的 Next.js API。开发环境使用
+内存存储；生产环境强制要求 Redis，避免限流和额度统计退化成单实例状态。
+
+## 本地启动
+
+### 环境要求
 
 - Node.js 22.13 或更高版本
 - npm
 - Drillr Gateway API Key
-
-## 本地启动
 
 ```bash
 git clone https://github.com/huluwa2026/drillr-market-dashboard.git
@@ -42,74 +98,82 @@ npm run dev
 ```
 
 在 `.env.local` 中填写 `DRILLR_API_KEY`，然后访问
-[http://localhost:3000/?lang=zh](http://localhost:3000/?lang=zh)。英文界面使用
-[`?lang=en`](http://localhost:3000/?lang=en)；页面顶部切换语言时不需要重新加载数据。
+[localhost:3000/?lang=zh](http://localhost:3000/?lang=zh)。英文界面使用
+[`?lang=en`](http://localhost:3000/?lang=en)。
 
-本地开发默认使用内存存储，不需要提前配置数据库。设置
-`ALLOW_LOCAL_ADMIN=true` 后，可以直接使用右上角管理功能；生产环境会忽略该
-本地旁路，并强制要求配置 Upstash Redis。
+本地开发不需要数据库。设置 `ALLOW_LOCAL_ADMIN=true` 可以启用股票池管理抽屉；
+生产环境会忽略这个开关。
 
-## 环境变量
+## 配置说明
 
-| 变量 | 必填 | 说明 |
+完整且可直接复制的变量列表见 [`.env.example`](./.env.example)。
+
+| 变量 | 必填 | 用途 |
 | --- | --- | --- |
-| `DRILLR_API_KEY` | 是 | 仅在服务端使用的 Drillr Gateway 凭证。 |
-| `DRILLR_GATEWAY_URL` | 否 | 网关地址，默认 `https://gateway.drillr.ai`。 |
-| `UPSTASH_REDIS_REST_URL` | 生产环境 | Upstash Redis REST 地址，通常由 Vercel Marketplace 自动注入。 |
-| `UPSTASH_REDIS_REST_TOKEN` | 生产环境 | 仅服务端使用的 Upstash Redis REST Token。 |
-| `KV_REST_API_URL` | 兼容变量 | 部分 Vercel Marketplace 集成使用的 Upstash REST 地址变量名。 |
-| `KV_REST_API_TOKEN` | 兼容变量 | 部分 Vercel Marketplace 集成使用的 Upstash REST Token 变量名。 |
-| `REDIS_KEY_PREFIX` | 否 | Redis 命名空间，默认 `drillr-market-dashboard:v1`。 |
-| `PUBLIC_API_RATE_LIMIT_PER_MINUTE` | 否 | 所有读取接口合计的每来源分钟上限，默认 `20`。 |
-| `PUBLIC_API_*_RATE_LIMIT_PER_MINUTE` | 否 | `DASHBOARD`、`LIVE`、`SIGNALS`、`INTRADAY`、`STOCKS` 的独立上限，默认分别为 `3`、`6`、`4`、`10`、`6`。 |
-| `DRILLR_DAILY_REQUEST_LIMIT` | 否 | 每个 UTC 日调用 Drillr Gateway 的总上限，默认 `5000`。 |
-| `DRILLR_DAILY_*_LIMIT` | 否 | `DASHBOARD`、`LIVE`、`SIGNALS`、`INTRADAY` 的独立回源日预算。 |
-| `DRILLR_CIRCUIT_FAILURE_THRESHOLD` | 否 | 连续失败多少次后熔断，默认 `5`。 |
-| `DRILLR_CIRCUIT_COOLDOWN_SECONDS` | 否 | 熔断冷却时间，默认 `60` 秒。 |
-| `RATE_LIMIT_SALT` | 生产环境 | 用于单向散列访问来源的随机密钥。 |
-| `TRUSTED_IDENTITY_MODE` | 否 | `disabled`（默认）、`hmac` 或显式可信的 `openai-sites`。 |
-| `TRUSTED_IDENTITY_HMAC_SECRET` | HMAC 模式 | 至少 32 个字符，仅与可信身份代理共享。 |
-| `ADMIN_EMAILS` | 生产写操作 | 管理员邮箱白名单；留空会禁用生产写操作。 |
-| `ALLOW_LOCAL_ADMIN` | 否 | 设置为 `true` 时允许开发环境管理股票池。 |
+| `DRILLR_API_KEY` | 是 | 仅在服务端使用的 Drillr Gateway 凭证 |
+| `DRILLR_GATEWAY_URL` | 否 | 网关地址，默认 `https://gateway.drillr.ai` |
+| `UPSTASH_REDIS_REST_URL` / `KV_REST_API_URL` | 生产环境 | Upstash Redis REST 地址 |
+| `UPSTASH_REDIS_REST_TOKEN` / `KV_REST_API_TOKEN` | 生产环境 | Upstash Redis REST Token |
+| `REDIS_KEY_PREFIX` | 否 | Redis 命名空间 |
+| `PUBLIC_API_*_RATE_LIMIT_PER_MINUTE` | 否 | 全局及各接口的来源限流 |
+| `DRILLR_DAILY_*_LIMIT` | 否 | 全局及各接口的每日上游预算 |
+| `DRILLR_CIRCUIT_*` | 否 | 连续失败阈值与恢复冷却时间 |
+| `RATE_LIMIT_SALT` | 生产环境 | 散列 Redis 中访问来源的密钥 |
+| `TRUSTED_IDENTITY_MODE` | 否 | `disabled`、`hmac` 或明确可信的 `openai-sites` |
+| `ADMIN_EMAILS` | 生产写操作 | 管理员白名单；留空即禁用写操作 |
+| `ALLOW_LOCAL_ADMIN` | 仅本地 | 开启本地股票池管理 |
 
-严禁将 `DRILLR_API_KEY` 写入公开前缀环境变量或提交到 Git。
+严禁把 `DRILLR_API_KEY` 放进公开前缀环境变量，也不要提交 `.env.local`。
 
-## 常用命令
+## 质量与测试
 
 ```bash
-npm run dev      # 启动本地开发服务
-npm run lint     # 执行代码检查
-npm test         # 构建并运行测试
-npm run test:e2e # 执行 Playwright 交互与视觉回归测试
-npm run build    # 创建生产构建
+npm run lint       # ESLint
+npm run typecheck  # TypeScript 类型检查，不生成文件
+npm test           # 快速仓库测试
+npm run build      # Next.js 生产构建
+npm run test:e2e   # Playwright 交互与视觉回归
+npm run check      # lint + typecheck + test + build
 ```
 
-首次执行端到端测试前运行 `npx playwright install chromium`。
+首次执行 E2E 前运行 `npx playwright install chromium`。Playwright 使用确定性的网络
+夹具；它们只存在于测试路径，不会被打包到生产环境。
 
-## 公开部署安全
+每次 push 和 Pull Request 会分别执行 **代码质量**、**生产构建**、**浏览器与视觉测试**
+三个任务。浏览器任务失败时会保留 7 天 Playwright 报告。CodeQL 会在 push、PR 和
+每周定时任务中扫描 JavaScript/TypeScript；Dependabot 每周检查 npm、每月检查
+GitHub Actions。
 
-- 实时报价、分钟行情和信号使用 60 秒 Redis 共享缓存，避免每个浏览器重复消耗额度。
-- 公开 API 同时执行所有接口共享的来源限流和独立接口限流，再访问 Drillr。
-- Redis 分布式刷新锁保证缓存过期时只有一个 Vercel 实例回源。
-- 每次真实上游请求都必须同时占用全局日预算和对应接口的日预算；连续失败默认达到 5 次后熔断 60 秒。
-- 上游异常时可以短暂返回过期缓存，具体错误只进入服务端日志，不返回浏览器。
-- 生产写操作默认关闭；必须同时配置可信身份模式和非空 `ADMIN_EMAILS`。
-- 正式公开前还必须配置 Vercel Firewall；HMAC 代理接入方式和完整部署检查清单见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
+## 安全部署
 
-## 数据、品牌与测试夹具
+在线体验部署在 Vercel，并使用 Upstash Redis。公开 Fork 会消耗部署者自己的
+Drillr 额度，因此不能只填一个 API Key 就直接上线：
 
-仓库不包含 Drillr 金融数据；数据访问和公开展示仍受用户自己的 Drillr 账户及 API
-套餐条款约束。MIT 许可证覆盖软件代码，不自动授予第三方数据或商标使用权，详见
-[NOTICE.md](./NOTICE.md)。
+1. 接入 Upstash Redis；
+2. 配置全局和各接口的每日预算；
+3. 为 `/api/*` 增加 Vercel Firewall 限流；
+4. 在可信身份接入前保持生产写操作关闭；
+5. 确认 Drillr 套餐允许预期的公开展示方式。
 
-Playwright 在 CI 中使用确定性的网络夹具检查布局。这些夹具只存在于测试目录，
-不会进入生产数据路径。
+完整信任边界、WAF 规则、身份模式和上线检查清单见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
 
-## 参与贡献
+## 参与贡献与获取帮助
 
-请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。安全问题请按
-[SECURITY.md](./SECURITY.md) 中的私密方式报告。
+欢迎参与贡献。可以先查看
+[`good first issue`](https://github.com/huluwa2026/drillr-market-dashboard/labels/good%20first%20issue)，
+提交 Pull Request 前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
-## 许可证
+- 使用与部署问题：[GitHub Discussions](https://github.com/huluwa2026/drillr-market-dashboard/discussions)
+- Bug 和功能建议：[GitHub Issues](https://github.com/huluwa2026/drillr-market-dashboard/issues)
+- 安全漏洞：[私密报告说明](./SECURITY.md)
+- 社区行为约定：[Code of Conduct](./CODE_OF_CONDUCT.md)
 
-[MIT](./LICENSE)
+更多帮助渠道见 [SUPPORT.md](./SUPPORT.md)。
+
+## 数据与许可证
+
+本项目是软件，不构成投资建议。仓库不包含 Drillr 金融数据；数据访问和展示仍受
+用户自己的 Drillr 账户与 API 套餐约束。MIT 许可证只覆盖源代码，不自动授予
+第三方市场数据或商标权利，详见 [NOTICE.md](./NOTICE.md)。
+
+项目采用 [MIT License](./LICENSE) 开源。

@@ -1,31 +1,76 @@
-# drillr Market Command
+<div align="center">
+  <img src="./public/favicon.png" width="72" height="72" alt="drillr logo" />
+  <h1>drillr Market Command</h1>
+  <p><strong>A no-scroll, high-density market cockpit powered by real Drillr data.</strong></p>
 
-[Live demo](https://drillr-market-dashboard.vercel.app/?lang=en) · [简体中文](./README.zh-CN.md)
+  <p>
+    <a href="https://github.com/huluwa2026/drillr-market-dashboard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/huluwa2026/drillr-market-dashboard/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
+    <a href="https://github.com/huluwa2026/drillr-market-dashboard/actions/workflows/codeql.yml"><img alt="CodeQL" src="https://github.com/huluwa2026/drillr-market-dashboard/actions/workflows/codeql.yml/badge.svg?branch=main" /></a>
+    <a href="https://drillr-market-dashboard.vercel.app/?lang=en"><img alt="Live on Vercel" src="https://img.shields.io/badge/live-Vercel-000000?logo=vercel&logoColor=white" /></a>
+    <a href="./LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/huluwa2026/drillr-market-dashboard?color=2ea44f" /></a>
+    <img alt="Node.js 22.13+" src="https://img.shields.io/badge/Node.js-%E2%89%A522.13-339933?logo=nodedotjs&logoColor=white" />
+    <img alt="Next.js 16" src="https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white" />
+  </p>
 
-A no-scroll, high-density market cockpit powered by the
-[Drillr](https://drillr.ai) financial data gateway.
+  <p>
+    <a href="https://drillr-market-dashboard.vercel.app/?lang=en"><strong>Live demo</strong></a>
+    · <a href="./README.zh-CN.md">简体中文</a>
+    · <a href="./CONTRIBUTING.md">Contribute</a>
+    · <a href="https://github.com/huluwa2026/drillr-market-dashboard/discussions">Discussions</a>
+  </p>
+</div>
 
-![drillr Market Dashboard in English](./public/og-en.png)
+[![drillr Market Dashboard in English](./public/og-en.png)](https://drillr-market-dashboard.vercel.app/?lang=en)
 
-The desktop workflow has two levels: scan the watchlist radar for meaningful
-changes, then open a single-stock focus view with interactive five-minute
-candles, extended-hours moves, catalysts, peer context, and seven visual
-intelligence panels. Tablet and mobile layouts reflow into a scrollable view.
-Production code never substitutes invented market data.
+## Why this project
 
-## Highlights
+Most stock dashboards either show too little at once or force users through a
+long page of disconnected numbers. drillr Market Command is designed around one
+desktop decision loop: **scan the watchlist, identify what changed, and inspect
+one stock without leaving the screen**.
 
-- Real Drillr Gateway data only—no mock market-data fallback in production.
-- A configurable watchlist of one to six stocks, with NVDA, GOOGL, TSLA, and AAPL as defaults.
-- A change-ranked radar with prices, multi-period returns, valuation, momentum, extended-hours moves, events, and target upside.
-- Interactive five-minute candlesticks aggregated from the latest one-minute session, including pointer crosshair, OHLC, volume, and a scrubber.
-- Seven chart-led panels for valuation, economic quality, growth, returns, trend, expectations, and balance-sheet/payout signals.
-- More than 200 visible data marks in focus mode, plus radar coverage for Drillr's structured fields and alternative-data catalog.
-- Quotes checked every 30 seconds and intraday bars/signals refreshed every 60 seconds, with the source cadence shown honestly in the UI.
-- Vercel WAF plus Upstash Redis-backed global/route rate limits, distributed refresh locks, daily gateway budgets, and circuit breaking in production.
-- Fixed single-screen desktop layout with responsive tablet and mobile flows.
-- Built-in English and Simplified Chinese UI, selected by browser preference,
-  remembered locally, or set explicitly with `?lang=en` / `?lang=zh`.
+Production code uses real data from the [Drillr](https://drillr.ai) financial
+data gateway. It never replaces unavailable market data with invented values.
+
+| At a glance | |
+| --- | --- |
+| Views | Change-ranked watchlist radar and single-stock focus |
+| Market view | Interactive 5-minute candlesticks, volume, extended hours, catalysts, and peers |
+| Intelligence | 7 chart-led panels and 200+ visible data marks in focus mode |
+| Refresh | Quotes checked every 30s; intraday bars and signals every 60s |
+| Layout | Fixed single-screen desktop cockpit; responsive tablet/mobile flow |
+| Languages | English and Simplified Chinese |
+| Runtime | Next.js 16, React 19, Vercel, and Upstash Redis |
+
+## Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Quality and testing](#quality-and-testing)
+- [Deploying safely](#deploying-safely)
+- [Contributing and support](#contributing-and-support)
+- [Data and license](#data-and-license)
+
+## Features
+
+- **Real data only.** There is no mock market-data fallback in production.
+- **Focused watchlist.** Track one to six stocks; NVDA, GOOGL, TSLA, and AAPL
+  are the defaults.
+- **Change-ranked radar.** Compare prices, multi-period returns, valuation,
+  momentum, extended-hours moves, events, and target upside at a glance.
+- **Interactive price action.** The latest one-minute session is aggregated
+  into five-minute candles with a crosshair, OHLC, volume, and scrubber.
+- **Visual fundamentals.** Valuation, economic quality, growth, returns, trend,
+  expectations, and balance-sheet/payout signals are chart-led rather than raw
+  number grids.
+- **Honest freshness.** Refresh timing and upstream source cadence are visible
+  in the interface.
+- **Built-in internationalization.** Browser language is detected, preference
+  is remembered locally, and `?lang=en` / `?lang=zh` provides an explicit URL.
+- **Public-demo guardrails.** Vercel WAF and Redis-backed rate limits, caches,
+  refresh locks, daily budgets, and circuit breaking protect the upstream key.
 
 ## Architecture
 
@@ -39,19 +84,20 @@ flowchart LR
     Guard --> Gateway[Drillr Gateway]
     Guard --> Redis[(Upstash Redis)]
     Gateway --> Markets[Market and alternative data]
-    Redis --> Universe[Stock universe and cache]
+    Redis --> Universe[Stock universe and shared state]
 ```
 
-The Drillr API key remains server-side. Browser code only talks to this
-application's guarded API routes.
+The Drillr API key stays server-side. Browsers only call guarded Next.js API
+routes. Local development uses an in-memory store; production requires Redis so
+rate limits and quota accounting cannot silently become instance-local.
 
-## Requirements
+## Quick start
+
+### Requirements
 
 - Node.js 22.13 or later
 - npm
 - A Drillr Gateway API key
-
-## Quick start
 
 ```bash
 git clone https://github.com/huluwa2026/drillr-market-dashboard.git
@@ -62,86 +108,87 @@ npm run dev
 ```
 
 Set `DRILLR_API_KEY` in `.env.local`, then open
-[http://localhost:3000/?lang=en](http://localhost:3000/?lang=en). Use
-[`?lang=zh`](http://localhost:3000/?lang=zh) for Simplified Chinese; the header
-switch changes and remembers the preference without reloading the dashboard.
+[localhost:3000/?lang=en](http://localhost:3000/?lang=en). Use
+[`?lang=zh`](http://localhost:3000/?lang=zh) for Chinese.
 
-Local development uses an in-memory store, so no database setup is required.
-With `ALLOW_LOCAL_ADMIN=true`, the stock-management drawer is writable during
-local development. This switch is ignored in production. Production deployments
-must configure Upstash Redis.
+Local development needs no database. Set `ALLOW_LOCAL_ADMIN=true` to enable the
+stock-management drawer locally; this switch is ignored in production.
 
-## Environment variables
+## Configuration
 
-| Variable | Required | Description |
+The complete, copyable list is in [`.env.example`](./.env.example).
+
+| Variable | Required | Purpose |
 | --- | --- | --- |
-| `DRILLR_API_KEY` | Yes | Server-side Drillr Gateway credential. |
-| `DRILLR_GATEWAY_URL` | No | Gateway endpoint; defaults to `https://gateway.drillr.ai`. |
-| `UPSTASH_REDIS_REST_URL` | Production | Upstash Redis REST endpoint, normally injected by the Vercel Marketplace integration. |
-| `UPSTASH_REDIS_REST_TOKEN` | Production | Server-side Upstash Redis REST token. |
-| `KV_REST_API_URL` | Alternative | Compatible Vercel Marketplace alias for the Upstash REST endpoint. |
-| `KV_REST_API_TOKEN` | Alternative | Compatible Vercel Marketplace alias for the Upstash REST token. |
-| `REDIS_KEY_PREFIX` | No | Redis namespace; defaults to `drillr-market-dashboard:v1`. |
-| `PUBLIC_API_RATE_LIMIT_PER_MINUTE` | No | Global per-client API limit across all read routes; defaults to `20`. |
-| `PUBLIC_API_*_RATE_LIMIT_PER_MINUTE` | No | Route limits for `DASHBOARD`, `LIVE`, `SIGNALS`, `INTRADAY`, and `STOCKS`; defaults to `3`, `6`, `4`, `10`, and `6`. |
-| `DRILLR_DAILY_REQUEST_LIMIT` | No | Global upstream Gateway calls per UTC day; defaults to `5000`. |
-| `DRILLR_DAILY_*_LIMIT` | No | Upstream sub-budgets for `DASHBOARD`, `LIVE`, `SIGNALS`, and `INTRADAY`. |
-| `DRILLR_CIRCUIT_FAILURE_THRESHOLD` | No | Consecutive failures before opening the circuit; defaults to `5`. |
-| `DRILLR_CIRCUIT_COOLDOWN_SECONDS` | No | Open-circuit cooldown; defaults to `60`. |
-| `RATE_LIMIT_SALT` | Production | Random secret used to hash client addresses stored in Redis. |
-| `TRUSTED_IDENTITY_MODE` | No | `disabled` (default), `hmac`, or explicitly trusted `openai-sites`. |
-| `TRUSTED_IDENTITY_HMAC_SECRET` | For `hmac` | At least 32 characters; shared only with the trusted identity proxy. |
-| `ADMIN_EMAILS` | For production writes | Comma-separated production admin allowlist. Empty disables writes. |
-| `ALLOW_LOCAL_ADMIN` | No | Enables local-only stock management when set to `true`. |
+| `DRILLR_API_KEY` | Yes | Server-side Drillr Gateway credential |
+| `DRILLR_GATEWAY_URL` | No | Gateway endpoint; defaults to `https://gateway.drillr.ai` |
+| `UPSTASH_REDIS_REST_URL` / `KV_REST_API_URL` | Production | Upstash Redis REST endpoint |
+| `UPSTASH_REDIS_REST_TOKEN` / `KV_REST_API_TOKEN` | Production | Upstash Redis REST token |
+| `REDIS_KEY_PREFIX` | No | Redis namespace |
+| `PUBLIC_API_*_RATE_LIMIT_PER_MINUTE` | No | Global and route-specific client limits |
+| `DRILLR_DAILY_*_LIMIT` | No | Global and route-specific upstream daily budgets |
+| `DRILLR_CIRCUIT_*` | No | Failure threshold and recovery cooldown |
+| `RATE_LIMIT_SALT` | Production | Secret used to hash client addresses stored in Redis |
+| `TRUSTED_IDENTITY_MODE` | No | `disabled`, `hmac`, or explicitly trusted `openai-sites` |
+| `ADMIN_EMAILS` | For production writes | Admin allowlist; empty disables writes |
+| `ALLOW_LOCAL_ADMIN` | Local only | Enables local stock-universe management |
 
-Never expose `DRILLR_API_KEY` through a public environment prefix or commit it
-to source control.
+Never expose `DRILLR_API_KEY` through a public environment prefix or commit an
+`.env.local` file.
 
-## Commands
+## Quality and testing
 
 ```bash
-npm run dev      # start the local development server
-npm run lint     # run ESLint
-npm test         # build and run the repository tests
-npm run test:e2e # run Playwright interaction and visual-regression tests
-npm run build    # create a production build
+npm run lint       # ESLint
+npm run typecheck  # TypeScript without emitting files
+npm test           # fast repository tests
+npm run build      # production Next.js build
+npm run test:e2e   # Playwright behavior + visual regression
+npm run check      # lint + typecheck + test + build
 ```
 
-Install the local browser once with `npx playwright install chromium` before
-running the end-to-end suite.
+Install Chromium once with `npx playwright install chromium` before the E2E
+suite. Playwright uses deterministic network fixtures in tests; they are never
+bundled into production.
 
-## Public deployment safety
+Every push and pull request runs separate **Quality**, **Production build**, and
+**Browser and visual tests** jobs. Failed browser runs retain a Playwright report
+for seven days. CodeQL scans JavaScript and TypeScript on pushes, pull requests,
+and a weekly schedule. Dependabot checks npm packages weekly and GitHub Actions
+monthly.
 
-- Live quotes, intraday bars, and signals use 60-second shared Redis caches;
-  the low-frequency core retains its longer cache.
-- Public routes consume a global per-client rate bucket plus a stricter
-  route-specific bucket before touching Drillr.
-- A Redis refresh lock prevents multiple Vercel instances from refilling the
-  same expired cache concurrently.
-- Every upstream request atomically consumes both a global UTC-day budget and a
-  route-specific sub-budget. Five consecutive failures open a default
-  60-second circuit.
-- Expired cached data may be served briefly while Drillr is unavailable.
-- Upstream error details are logged server-side and never returned to browsers.
-- Production admin writes are disabled unless `ADMIN_EMAILS` is non-empty and
-  the identity mode is explicitly configured. A matching Vercel Firewall rule
-  is required before public launch; see [DEPLOYMENT.md](./DEPLOYMENT.md).
+## Deploying safely
 
-## Data, brand, and test fixtures
+The public demo is deployed on Vercel with Upstash Redis. A public fork uses the
+deployment owner's Drillr quota, so do not deploy with only an API key:
 
-Drillr market data is not included in this repository and is governed by the
-terms of the user's Drillr account and API plan. The MIT license covers the
-software, not third-party market data or trademark rights. See
-[NOTICE.md](./NOTICE.md).
+1. connect Upstash Redis;
+2. configure global and route-level budgets;
+3. add a Vercel Firewall limit for `/api/*`;
+4. leave production writes disabled unless trusted identity is configured;
+5. verify your Drillr plan permits the intended public display.
 
-Playwright uses deterministic network fixtures for layout regression in CI.
-Those fixtures are test-only and are never bundled into a production path.
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for the trust boundaries, WAF rule, identity
+modes, and pre-launch checklist.
 
-## Contributing
+## Contributing and support
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md). Please report security issues through
-the private process described in [SECURITY.md](./SECURITY.md).
+Contributions are welcome. Start with
+[`good first issue`](https://github.com/huluwa2026/drillr-market-dashboard/labels/good%20first%20issue)
+or read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 
-## License
+- Usage and setup questions: [GitHub Discussions](https://github.com/huluwa2026/drillr-market-dashboard/discussions)
+- Bugs and feature requests: [GitHub Issues](https://github.com/huluwa2026/drillr-market-dashboard/issues)
+- Security reports: [private reporting instructions](./SECURITY.md)
+- Community expectations: [Code of Conduct](./CODE_OF_CONDUCT.md)
 
-[MIT](./LICENSE)
+More support routes are listed in [SUPPORT.md](./SUPPORT.md).
+
+## Data and license
+
+This project is software, not investment advice. Drillr market data is not
+included in the repository and remains governed by the user's Drillr account
+and API plan. The MIT license covers the source code, not third-party market
+data or trademark rights; see [NOTICE.md](./NOTICE.md).
+
+Released under the [MIT License](./LICENSE).
