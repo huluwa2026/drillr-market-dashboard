@@ -1,6 +1,6 @@
 # drillr Market Command
 
-[简体中文](./README.zh-CN.md)
+[Live demo](https://drillr-market-dashboard.vercel.app/?lang=en) · [简体中文](./README.zh-CN.md)
 
 A no-scroll, high-density market cockpit powered by the
 [Drillr](https://drillr.ai) financial data gateway.
@@ -22,7 +22,7 @@ Production code never substitutes invented market data.
 - Seven chart-led panels for valuation, economic quality, growth, returns, trend, expectations, and balance-sheet/payout signals.
 - More than 200 visible data marks in focus mode, plus radar coverage for Drillr's structured fields and alternative-data catalog.
 - Quotes checked every 30 seconds and intraday bars/signals refreshed every 60 seconds, with the source cadence shown honestly in the UI.
-- Upstash Redis-backed watchlist configuration, shared API caching, rate limiting, a daily gateway budget, and circuit breaking in production.
+- Vercel WAF plus Upstash Redis-backed global/route rate limits, distributed refresh locks, daily gateway budgets, and circuit breaking in production.
 - Fixed single-screen desktop layout with responsive tablet and mobile flows.
 - Built-in English and Simplified Chinese UI, selected by browser preference,
   remembered locally, or set explicitly with `?lang=en` / `?lang=zh`.
