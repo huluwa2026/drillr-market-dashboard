@@ -112,13 +112,16 @@ test("refreshes live quotes, intraday bars, and signals through guarded server A
   assert.match(dashboardRoute, /dashboard-v7-dense/);
 });
 
-test("keeps local secrets ignored and publishes the practical product metadata", async () => {
-  const [packageText, readme, envExample, gitignore, layout, notice, deployment] = await Promise.all([
+test("keeps local secrets ignored and publishes bilingual product metadata", async () => {
+  const [packageText, readme, chineseReadme, envExample, gitignore, layout, page, component, notice, deployment] = await Promise.all([
     readFile(new URL("package.json", root), "utf8"),
     readFile(new URL("README.md", root), "utf8"),
+    readFile(new URL("README.zh-CN.md", root), "utf8"),
     readFile(new URL(".env.example", root), "utf8"),
     readFile(new URL(".gitignore", root), "utf8"),
     readFile(new URL("app/layout.tsx", root), "utf8"),
+    readFile(new URL("app/page.tsx", root), "utf8"),
+    readFile(new URL("app/drillr-dashboard.tsx", root), "utf8"),
     readFile(new URL("NOTICE.md", root), "utf8"),
     readFile(new URL("DEPLOYMENT.md", root), "utf8"),
   ]);
@@ -131,9 +134,18 @@ test("keeps local secrets ignored and publishes the practical product metadata",
   assert.match(envExample, /^TRUSTED_IDENTITY_MODE=disabled$/m);
   assert.match(envExample, /^DRILLR_DAILY_REQUEST_LIMIT=/m);
   assert.match(gitignore, /\.env\*/);
-  assert.match(layout, /实时自选股驾驶舱/);
+  assert.match(readme, /public\/og-en\.png/);
+  assert.match(chineseReadme, /public\/og-zh\.png/);
+  assert.match(layout, /Real-time watchlist cockpit/);
+  assert.match(layout, /"en-US"/);
+  assert.match(layout, /"zh-CN"/);
+  assert.match(page, /实时自选股驾驶舱/);
+  assert.match(component, /drillr-locale/);
+  assert.match(component, /data-locale=\{locale\}/);
   assert.match(notice, /market data/i);
   assert.match(deployment, /HMAC mode/);
   await access(new URL("LICENSE", root));
   await access(new URL("public/og-real.png", root));
+  await access(new URL("public/og-en.png", root));
+  await access(new URL("public/og-zh.png", root));
 });

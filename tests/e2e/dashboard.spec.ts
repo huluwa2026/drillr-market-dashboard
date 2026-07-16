@@ -42,7 +42,7 @@ test("focus cockpit stays dense, interactive and collision-free at 1440×900", a
     if (message.type() === "error") consoleErrors.push(message.text());
   });
 
-  await page.goto("/?ticker=AAPL&view=focus");
+  await page.goto("/?ticker=AAPL&view=focus&lang=zh");
   await expect(page.locator(".focus-layout")).toBeVisible();
   await expect(page.locator(".watch-strip")).toBeHidden();
   await expect(page.locator(".visual-data-panel")).toHaveCount(7);
@@ -65,7 +65,7 @@ test("focus cockpit stays dense, interactive and collision-free at 1440×900", a
 
 test("radar keeps the whole watchlist visible at 1920×1080", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
-  await page.goto("/?ticker=AAPL&view=radar");
+  await page.goto("/?ticker=AAPL&view=radar&lang=zh");
   await expect(page.locator(".radar-layout")).toBeVisible();
   await expect(page.locator(".radar-stock-list > button")).toHaveCount(2);
   await expectSingleDesktopScreen(page);
@@ -79,8 +79,42 @@ test("radar keeps the whole watchlist visible at 1920×1080", async ({ page }) =
 
 test("reduced-motion preference disables live dashboard animation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/?ticker=AAPL&view=focus");
+  await page.goto("/?ticker=AAPL&view=focus&lang=zh");
   await expect(page.locator(".focus-layout")).toBeVisible();
   const animated = page.locator(".terminal-health .connected i");
   await expect(animated).toHaveCSS("animation-name", "none");
+});
+
+test("English and Chinese are complete, URL-addressable and remembered", async ({ page }) => {
+  await page.goto("/?ticker=AAPL&view=focus&lang=en");
+  const terminal = page.locator(".market-terminal");
+  await expect(terminal).toHaveAttribute("data-locale", "en");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByText("High-density real-time market cockpit")).toBeVisible();
+  await expect(page.getByText("Latest-session candlesticks")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Valuation spectrum" })).toBeVisible();
+
+  const unexpectedCjk = await terminal.evaluate((root) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const matches: string[] = [];
+    while (walker.nextNode()) {
+      const parent = walker.currentNode.parentElement;
+      const value = walker.currentNode.textContent?.trim() ?? "";
+      if (!parent || !value || parent.closest(".locale-switch")) continue;
+      if (getComputedStyle(parent).display !== "none" && /[\u3400-\u9fff]/u.test(value)) matches.push(value);
+    }
+    return matches;
+  });
+  expect(unexpectedCjk).toEqual([]);
+
+  await page.getByRole("button", { name: "中" }).click();
+  await expect(terminal).toHaveAttribute("data-locale", "zh");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expect(page.getByText("高密度实时自选驾驶舱")).toBeVisible();
+  await expect(page).toHaveURL(/lang=zh/);
+  expect(await page.evaluate(() => localStorage.getItem("drillr-locale"))).toBe("zh");
+
+  await page.goto("/?ticker=AAPL&view=focus");
+  await expect(page.locator(".market-terminal")).toHaveAttribute("data-locale", "zh");
+  await expect(page.getByText("估值倍率谱")).toBeVisible();
 });

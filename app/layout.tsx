@@ -18,26 +18,30 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "drillr Market Command｜实时自选股驾驶舱";
-  const description = "不滚动的高密度实时自选股驾驶舱：先用自选雷达发现变化，再进入单股聚焦页查看可交互五分钟 K 线、实时事件与 200+ 图表化数据标记。";
+  const title = "drillr Market Command | Real-time watchlist cockpit";
+  const description = "A no-scroll, high-density market cockpit with a watchlist radar, interactive five-minute candlesticks, live events and more than 200 visual data marks.";
 
   return {
     metadataBase: new URL(origin),
     title,
     description,
+    alternates: {
+      canonical: `${origin}/?lang=en`,
+      languages: { "en-US": `${origin}/?lang=en`, "zh-CN": `${origin}/?lang=zh` },
+    },
     icons: { icon: "/favicon.png", shortcut: "/favicon.png", apple: "/favicon.png" },
     openGraph: {
       title,
       description,
       type: "website",
       url: origin,
-      images: [{ url: `${origin}/og-real.png`, width: 1280, height: 720, alt: "drillr 实时自选股驾驶舱。" }],
+      images: [{ url: `${origin}/og-en.png`, width: 1280, height: 720, alt: "drillr real-time watchlist cockpit." }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [`${origin}/og-real.png`],
+      images: [`${origin}/og-en.png`],
     },
   };
 }
@@ -48,7 +52,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

@@ -1,27 +1,11 @@
+import { copyFile } from "node:fs/promises";
 import { chromium } from "@playwright/test";
 
 const origin = process.env.DRILLR_PREVIEW_URL ?? "http://localhost:3000";
-const url = new URL("/", origin);
-url.searchParams.set("ticker", process.env.DRILLR_PREVIEW_TICKER ?? "AAPL");
-url.searchParams.set("view", "focus");
-
+const ticker = process.env.DRILLR_PREVIEW_TICKER ?? "AAPL";
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({
-  viewport: { width: 1280, height: 720 },
-  deviceScaleFactor: 1,
-  colorScheme: "dark",
-  locale: "zh-CN",
-  timezoneId: "Asia/Shanghai",
-  reducedMotion: "reduce",
-});
 
-const errors = [];
-page.on("console", (message) => {
-  if (message.type() === "error") errors.push(message.text());
-});
-page.on("pageerror", (error) => errors.push(error.message));
-
-async function assertSingleScreen() {
+async function assertSingleScreen(page) {
   const overflow = await page.evaluate(() => ({
     width: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     height: document.documentElement.scrollHeight - document.documentElement.clientHeight,
@@ -31,7 +15,7 @@ async function assertSingleScreen() {
   }
 }
 
-async function assertNoOverlap(selector) {
+async function assertNoOverlap(page, selector) {
   const collisions = await page.locator(selector).evaluateAll((elements) => {
     const boxes = elements.map((element) => {
       const rect = element.getBoundingClientRect();
@@ -50,31 +34,55 @@ async function assertNoOverlap(selector) {
   if (collisions.length) throw new Error(`Overlapping dashboard panels: ${collisions.join(" | ")}`);
 }
 
-try {
-  await page.goto(url.href, { waitUntil: "domcontentloaded" });
-  await page.locator(".focus-layout").waitFor({ state: "visible", timeout: 30_000 });
-  await page.waitForFunction(
-    () => document.querySelector(".price-panel .practical-panel-head em")?.textContent?.includes("1M→5M"),
-    undefined,
-    { timeout: 30_000 },
-  );
-  await page.locator(".intraday-chart .chart-candle").first().waitFor({ state: "attached" });
-  await page.waitForTimeout(800);
-
-  await assertSingleScreen();
-  await assertNoOverlap(".price-panel,.focus-signal-panel,.focus-market-panel,.focus-intelligence-grid > section");
-
-  await page.screenshot({
-    path: "public/og-real.png",
-    fullPage: false,
+async function capture(locale) {
+  const url = new URL("/", origin);
+  url.searchParams.set("ticker", ticker);
+  url.searchParams.set("view", "focus");
+  url.searchParams.set("lang", locale);
+  const page = await browser.newPage({
+    viewport: { width: 1280, height: 720 },
+    deviceScaleFactor: 1,
+    colorScheme: "dark",
+    locale: locale === "zh" ? "zh-CN" : "en-US",
+    timezoneId: "Asia/Shanghai",
+    reducedMotion: "reduce",
   });
+  const errors = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
 
-  await page.getByRole("button", { name: "自选雷达" }).click();
-  await page.locator(".radar-layout").waitFor({ state: "visible" });
-  await assertSingleScreen();
-  await assertNoOverlap(".radar-watchlist,.radar-signal-panel,.radar-cross-panel,.radar-coverage-panel");
-  if (errors.length) throw new Error(`Browser errors: ${errors.join(" | ")}`);
-  console.log(`Captured ${url.href} to public/og-real.png`);
+  try {
+    await page.goto(url.href, { waitUntil: "domcontentloaded" });
+    await page.locator(`.market-terminal[data-locale="${locale}"] .focus-layout`).waitFor({ state: "visible", timeout: 30_000 });
+    await page.waitForFunction(
+      () => document.querySelector(".price-panel .practical-panel-head em")?.textContent?.includes("1M→5M"),
+      undefined,
+      { timeout: 30_000 },
+    );
+    await page.locator(".intraday-chart .chart-candle").first().waitFor({ state: "attached" });
+    await page.waitForTimeout(800);
+
+    await assertSingleScreen(page);
+    await assertNoOverlap(page, ".price-panel,.focus-signal-panel,.focus-market-panel,.focus-intelligence-grid > section");
+    await page.screenshot({ path: `public/og-${locale}.png`, fullPage: false });
+
+    await page.getByRole("button", { name: locale === "zh" ? "自选雷达" : "WATCHLIST RADAR" }).click();
+    await page.locator(".radar-layout").waitFor({ state: "visible" });
+    await assertSingleScreen(page);
+    await assertNoOverlap(page, ".radar-watchlist,.radar-signal-panel,.radar-cross-panel,.radar-coverage-panel");
+    if (errors.length) throw new Error(`Browser errors: ${errors.join(" | ")}`);
+    console.log(`Captured ${url.href} to public/og-${locale}.png`);
+  } finally {
+    await page.close();
+  }
+}
+
+try {
+  await capture("en");
+  await capture("zh");
+  await copyFile("public/og-en.png", "public/og-real.png");
 } finally {
   await browser.close();
 }

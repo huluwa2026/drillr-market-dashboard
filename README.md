@@ -5,7 +5,7 @@
 A no-scroll, high-density market cockpit powered by the
 [Drillr](https://drillr.ai) financial data gateway.
 
-![drillr Market Dashboard](./public/og-real.png)
+![drillr Market Dashboard in English](./public/og-en.png)
 
 The desktop workflow has two levels: scan the watchlist radar for meaningful
 changes, then open a single-stock focus view with interactive five-minute
@@ -24,6 +24,8 @@ Production code never substitutes invented market data.
 - Quotes checked every 30 seconds and intraday bars/signals refreshed every 60 seconds, with the source cadence shown honestly in the UI.
 - Cloudflare D1-backed watchlist configuration, shared API caching, rate limiting, a daily gateway budget, and circuit breaking.
 - Fixed single-screen desktop layout with responsive tablet and mobile flows.
+- Built-in English and Simplified Chinese UI, selected by browser preference,
+  remembered locally, or set explicitly with `?lang=en` / `?lang=zh`.
 
 ## Architecture
 
@@ -60,7 +62,9 @@ npm run dev
 ```
 
 Set `DRILLR_API_KEY` in `.env.local`, then open
-[http://localhost:3000](http://localhost:3000).
+[http://localhost:3000/?lang=en](http://localhost:3000/?lang=en). Use
+[`?lang=zh`](http://localhost:3000/?lang=zh) for Simplified Chinese; the header
+switch changes and remembers the preference without reloading the dashboard.
 
 The local Cloudflare runtime creates the D1 tables automatically. With
 `ALLOW_LOCAL_ADMIN=true`, the stock-management drawer is writable during local

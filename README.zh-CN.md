@@ -4,7 +4,7 @@
 
 一个由 [Drillr](https://drillr.ai) 真实金融数据驱动、不滚动的高密度实时自选股驾驶舱。
 
-![drillr Market Dashboard](./public/og-real.png)
+![drillr Market Dashboard 中文界面](./public/og-zh.png)
 
 桌面端以严格单屏呈现两层工作流：先用“自选雷达”发现哪只股票正在变化，再进入
 “单股聚焦”查看可交互五分钟 K 线、盘前盘后、实时催化剂、同业横截面和七个
@@ -22,6 +22,8 @@
 - 报价每 30 秒检查、分时与信号每 60 秒刷新；页面明确标注底层数据实际频率。
 - 使用 Cloudflare D1 保存股票池，并提供共享缓存、匿名限流、每日上游额度与连续失败熔断。
 - 桌面端不滚动；平板和手机端使用自适应流式布局。
+- 内置英文与简体中文界面：可按浏览器语言自动选择、在页面顶部切换并记忆偏好，
+  也可以使用 `?lang=en` / `?lang=zh` 明确指定。
 
 ## 环境要求
 
@@ -40,7 +42,8 @@ npm run dev
 ```
 
 在 `.env.local` 中填写 `DRILLR_API_KEY`，然后访问
-[http://localhost:3000](http://localhost:3000)。
+[http://localhost:3000/?lang=zh](http://localhost:3000/?lang=zh)。英文界面使用
+[`?lang=en`](http://localhost:3000/?lang=en)；页面顶部切换语言时不需要重新加载数据。
 
 本地 Cloudflare 运行环境会自动创建所需 D1 数据表。开发环境设置
 `ALLOW_LOCAL_ADMIN=true` 后，可以直接使用右上角管理功能；生产环境会忽略该
