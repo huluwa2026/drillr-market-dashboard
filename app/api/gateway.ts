@@ -70,6 +70,7 @@ export async function gatewayJson<T>(
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${apiKey}`,
+        "X-Drillr-Via": "drillr-market-dashboard",
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
         ...init?.headers,
       },

@@ -17,6 +17,7 @@
     · <a href="./README.zh-CN.md">简体中文</a>
     · <a href="./CONTRIBUTING.md">Contribute</a>
     · <a href="https://github.com/huluwa2026/drillr-market-dashboard/discussions">Discussions</a>
+    · <a href="https://drillr.ai/l/market-command-gh">Build with Drillr</a>
   </p>
 </div>
 
@@ -111,6 +112,8 @@ Set `DRILLR_API_KEY` in `.env.local`, then open
 [localhost:3000/?lang=en](http://localhost:3000/?lang=en). Use
 [`?lang=zh`](http://localhost:3000/?lang=zh) for Chinese.
 
+Create a [Drillr API key](https://drillr.ai/l/market-command-gh). Server-side gateway requests carry `X-Drillr-Via: drillr-market-dashboard` for aggregate project usage attribution without adding tracking parameters to public URLs.
+
 Local development needs no database. Set `ALLOW_LOCAL_ADMIN=true` to enable the
 stock-management drawer locally; this switch is ignored in production.
 
@@ -170,6 +173,10 @@ deployment owner's Drillr quota, so do not deploy with only an API key:
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) for the trust boundaries, WAF rule, identity
 modes, and pre-launch checklist.
+
+## Privacy
+
+The hosted demo uses Vercel Web Analytics for anonymous aggregate page views and referrers. It does not set analytics cookies or emit custom interaction events. Query strings and URL fragments are removed before an event is sent, so language, tickers, and selected views are excluded. Outbound Drillr links are readable branded short links and land on a clean URL without visible UTM parameters.
 
 ## Contributing and support
 

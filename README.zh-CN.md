@@ -17,6 +17,7 @@
     · <a href="./README.md">English</a>
     · <a href="./CONTRIBUTING.md">参与贡献</a>
     · <a href="https://github.com/huluwa2026/drillr-market-dashboard/discussions">交流讨论</a>
+    · <a href="https://drillr.ai/l/market-command-gh">使用 Drillr 构建</a>
   </p>
 </div>
 
@@ -101,6 +102,8 @@ npm run dev
 [localhost:3000/?lang=zh](http://localhost:3000/?lang=zh)。英文界面使用
 [`?lang=en`](http://localhost:3000/?lang=en)。
 
+先[创建 Drillr API Key](https://drillr.ai/l/market-command-gh)。服务端网关请求会携带 `X-Drillr-Via: drillr-market-dashboard` 项目标识，用于汇总项目用量，不会给公开页面 URL 添加追踪参数。
+
 本地开发不需要数据库。设置 `ALLOW_LOCAL_ADMIN=true` 可以启用股票池管理抽屉；
 生产环境会忽略这个开关。
 
@@ -156,6 +159,10 @@ Drillr 额度，因此不能只填一个 API Key 就直接上线：
 5. 确认 Drillr 套餐允许预期的公开展示方式。
 
 完整信任边界、WAF 规则、身份模式和上线检查清单见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
+
+## 隐私
+
+在线体验使用 Vercel Web Analytics 统计匿名、汇总的页面访问和来源，不设置分析 Cookie，也不发送自定义交互事件。事件发送前会移除查询参数和 URL 片段，因此语言、股票和所选视图不会进入分析数据。跳转 Drillr 使用可读的品牌短链，落地后的地址栏不显示 UTM 参数。
 
 ## 参与贡献与获取帮助
 

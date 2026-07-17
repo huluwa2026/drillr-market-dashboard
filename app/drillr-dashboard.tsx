@@ -996,7 +996,7 @@ export function DrillrDashboard() {
 
       <footer className="terminal-statusbar">
         <div><RefreshStamp label="QUOTE" value={live?.fetchedAt} cadence="30S CHECK / 3M SOURCE" /><RefreshStamp label="CHART" value={intraday?.fetchedAt} cadence="60S" /><RefreshStamp label="SIGNAL" value={freshSignals?.fetchedAt} cadence="60S" /></div>
-        <span className={dashboard.stale || dashboard.partial ? "negative" : "positive"}>{dashboard.stale ? "STALE CACHE" : dashboard.partial ? "PARTIAL CORE" : "200+ VISUAL MARKS · REAL DATA · NO MOCK"}</span>
+        <span className={dashboard.stale || dashboard.partial ? "negative" : "positive"}>{dashboard.stale ? "STALE CACHE" : dashboard.partial ? "PARTIAL CORE" : "200+ VISUAL MARKS · REAL DATA · NO MOCK"} · <a href="https://drillr.ai/l/market-command-app" target="_blank" rel="noreferrer">{localized(locale, "使用 DRILLR 构建 ↗", "BUILD WITH DRILLR ↗")}</a></span>
       </footer>
 
       {adminOpen && <div className="admin-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdminOpen(false); }}><section className="admin-drawer" role="dialog" aria-modal="true" aria-labelledby="admin-title">

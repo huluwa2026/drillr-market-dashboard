@@ -90,6 +90,7 @@ test("refreshes live quotes, intraday bars, and signals through guarded server A
 
   assert.match(gateway, /process\.env\.DRILLR_API_KEY/);
   assert.match(gateway, /Authorization:/);
+  assert.match(gateway, /"X-Drillr-Via": "drillr-market-dashboard"/);
   assert.match(gateway, /Bearer/);
   assert.match(gateway, /cache:\s*"no-store"/);
   assert.match(gateway, /DRILLR_DAILY_REQUEST_LIMIT/);
@@ -174,6 +175,8 @@ test("keeps local secrets ignored and publishes bilingual product metadata", asy
   assert.match(layout, /"zh-CN"/);
   assert.match(page, /实时自选股驾驶舱/);
   assert.match(component, /drillr-locale/);
+  assert.match(component, /https:\/\/drillr\.ai\/l\/market-command-app/);
+  assert.match(layout, /PrivacyAnalytics/);
   assert.match(component, /data-locale=\{locale\}/);
   assert.match(notice, /market data/i);
   assert.match(deployment, /Vercel deployment/);
