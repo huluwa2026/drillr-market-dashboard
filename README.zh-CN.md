@@ -29,7 +29,8 @@
 drillr Market Command 围绕一个明确的桌面决策流程设计：**先扫描自选股、发现什么
 正在变化，再在不离开单屏的情况下聚焦一只股票。**
 
-生产代码只使用 [Drillr](https://drillr.ai) 金融数据网关的真实数据。真实行情不可用
+生产代码只使用
+[Drillr 金融数据网关](https://drillr.ai/l/market-command-gh)提供的真实数据。真实行情不可用
 时，页面不会偷偷切换成虚构数据。
 
 | 快速了解 | |

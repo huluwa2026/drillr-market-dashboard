@@ -30,8 +30,9 @@ long page of disconnected numbers. drillr Market Command is designed around one
 desktop decision loop: **scan the watchlist, identify what changed, and inspect
 one stock without leaving the screen**.
 
-Production code uses real data from the [Drillr](https://drillr.ai) financial
-data gateway. It never replaces unavailable market data with invented values.
+Production code uses real data from the
+[Drillr financial data gateway](https://drillr.ai/l/market-command-gh). It never
+replaces unavailable market data with invented values.
 
 | At a glance | |
 | --- | --- |
