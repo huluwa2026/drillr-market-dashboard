@@ -49,11 +49,16 @@ function redisClient() {
     sharedRedis = new Redis({ url, token });
     return sharedRedis;
   }
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "Upstash Redis credentials are required in production (UPSTASH_REDIS_REST_URL/TOKEN or KV_REST_API_URL/TOKEN)",
-    );
-  }
+  // 没有 Redis 凭据时降级到进程内存(localStore),生产环境同样如此。
+  //
+  // 这里刻意不抛错:Redis 在本项目只承担限流 / 缓存 / 熔断,都不影响数据正确性。
+  // 早期版本在生产环境强制要求 Redis,结果 2026-09 Upstash 的免费实例因长期闲置
+  // 被归档后,五个 API 路由在入口处(try 之外)抛出未捕获异常,整站返回 500 空 body,
+  // 前端解析空响应报 "Unexpected end of JSON input"。为一个 showcase 挂一个
+  // 长期计费的 Redis 并不划算,所以选择让它在无 Redis 时也能正常工作。
+  //
+  // 代价:serverless 每个实例的内存态互相独立、且随冷启动丢失 ——
+  // 限流与日额度按实例计算(比预期宽松),缓存命中率下降(更多请求打到 gateway)。
   sharedRedis = null;
   return sharedRedis;
 }
