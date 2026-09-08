@@ -1,4 +1,5 @@
 import { Redis } from "@upstash/redis";
+import { blobBudgetConfigured, reserveViaBlob } from "./blob-budget";
 
 const DEFAULT_STOCKS = [
   { ticker: "NVDA", name: "英伟达", market: "NASDAQ", sortOrder: 10 },
@@ -267,6 +268,20 @@ export async function reserveGatewayDailyRequest(
       scopeUsed: Number(scopeUsed),
     };
   }
+  // Redis 不在时,优先用 Blob 做跨实例的持久化计数 —— 内存版的日额度
+  // 实际上限是「配置值 x 活跃实例数」,挡不住分布式请求。
+  // Blob 本身出问题时降级到内存,绝不因为计数失败而让整个请求崩掉。
+  if (blobBudgetConfigured()) {
+    try {
+      return await reserveViaBlob(dayKey, scope, totalLimit, scopeLimit);
+    } catch (error) {
+      console.warn(
+        "[drillr-budget] blob reservation failed, falling back to in-memory counting: %s",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
   const store = localStore();
   const totalUsed = store.dailyUsage.get(dayKey) ?? 0;
   const scopeKey = `${dayKey}:${scope}`;
